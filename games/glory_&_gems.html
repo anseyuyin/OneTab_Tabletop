@@ -541,7 +541,7 @@ function uiIsSelectable(g, key) {
         return card && canAfford(p, card);
       }
       if (parts[0] === 'reserved') {
-        var uid = +parts[2];
+        var uid = +parts[1];
         var rc = p.reserved.find(function (r) { return r.card.uid === uid; });
         return rc && canAfford(p, rc.card);
       }
@@ -616,7 +616,7 @@ function uiExecute(g) {
       var card;
       var fromReserved = false;
       if (parts[0] === 'card') card = tableCards(g, +parts[1], +parts[2]);
-      else { card = p.reserved.find(function (r) { return r.card.uid === +parts[2]; }).card; fromReserved = true; }
+      else { card = p.reserved.find(function (r) { return r.card.uid === +parts[1]; }).card; fromReserved = true; }
       execBuy(g, p, card, fromReserved);
       break;
     }
@@ -1045,7 +1045,7 @@ function gemPileGroup(key, colorKey, x, y, size, z) {
 </script>
 <script>
 /* ============================================================
- * 《荣光宝石商》场景层：布局计算、首页、游戏场景、保留牌模态、结算
+ * 《荣光宝石商》场景层：布局计算、首页、游戏场景、结算
  * ============================================================ */
 
 'use strict';
@@ -1193,10 +1193,11 @@ function panelLocalToWorld(area, pos, lx, ly, w, h) {
 
 // ============================================================
 // 统一玩家信息内容布局（横/竖面板共用：同字号、同间距、同风格）
-// 在内容坐标系绘制（宽 CW 高 CH）；返回保留牌背组中心 {cx,cy,w,h} 或 null
+// 在内容坐标系绘制（宽 CW 高 CH）；返回保留牌内容坐标数组 [{cx,cy,w,h,uid}, ...]（空数组 = 无保留牌）
 // ============================================================
 function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
-  var rc = null;
+  // 返回保留牌内容坐标数组：[{cx,cy,w,h,uid}, ...]（空数组 = 无保留牌）
+  var rcCards = [];
   var pad = Math.max(5, CH * 0.07);
   var midY = CH * 0.52;
 
@@ -1264,15 +1265,22 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   text(ctx, '' + playerGemTotal(p), ccx - scr * 0.32, ccy - scr * 0.32, scr * 0.64, '#3c4048', 'center');
   text(ctx, '' + gemTotalMax, ccx + scr * 0.38, ccy + scr * 0.38, scr * 0.48, '#8a6d1d', 'center');
 
-  // 保留牌区（右端，红色牌背叠放 + 总数）
+  // 保留牌区（右端：真实牌面等比缩放、错位排列；点击可在购买模式下选中购买）
+  // 牌面等比放大（宽度上限 62 ≈ 原 24 的 2.6 倍；高度约束牌高 ≤ 面板高的 90%）；窄面板按剩余空间自适应压缩，避免与资源槽重叠
   var reserved = p.reserved;
-  var rcw = Math.min(CH * 0.26, 20), rch = rcw * 1.42;
   var showN = Math.min(3, reserved.length);
-  var resvW = showN ? (rcw + (showN - 1) * rcw * 0.62 + 26) : 24;
-
-  // 资源槽尺寸（5 槽 + 黄金，宽度自适应）
   var gr = Math.min(CH * 0.2, 14);
   var x0 = ccx + scr + 6;
+  var minRight = x0 + 5 * (18 + 18 * 0.14) + gr * 2 + 2;   // 资源槽最小占用右缘（ss=18 时）
+  var availW = Math.max(0, CW - pad - 4 - minRight);
+  var rw = Math.min(CH * 0.9 / 1.42, 62);
+  if (showN) rw = Math.min(rw, availW / (1 + 0.62 * (showN - 1)));
+  rw = Math.max(16, Math.round(rw));
+  var rh = Math.round(rw * 1.42);
+  var step = rw * 0.62;   // 相邻错位（露出 62%，最新保留的牌在最右完整可见）
+  var resvW = showN ? (rw + (showN - 1) * step) : 4;
+
+  // 资源槽尺寸（5 槽 + 黄金，宽度自适应）
   var xEnd = CW - pad - resvW - 4;
   var ss = Math.min(CH * 0.54, (xEnd - x0 - (gr * 2 + 8)) / 5.7);
   ss = Math.max(18, ss);
@@ -1312,28 +1320,18 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   drawGemChip(ctx, gcx, midY, gr, GOLD_INFO.gem, GOLD_INFO.gemDark, GOLD_INFO.stroke);
   text(ctx, '' + p.gold, gcx, midY + 0.5, gr * 0.95, GOLD_INFO.onChip, 'center');
 
-  // 保留牌（红色牌背叠放，点击查看/购买）
+  // 保留牌（真实牌面等比缩放，右端错位排列：第 0 张最左，最新保留的最右完整可见）
   if (showN) {
-    var rx0 = CW - pad - 16 - (rcw + (showN - 1) * rcw * 0.62);
-    var ry0 = midY - rch / 2;
     for (var ri = 0; ri < showN; ri++) {
-      var bx2 = rx0 + ri * rcw * 0.62;
-      var rg2 = ctx.createLinearGradient(0, ry0, 0, ry0 + rch);
-      rg2.addColorStop(0, '#e0453a');
-      rg2.addColorStop(1, '#a92d20');
-      ctx.fillStyle = rg2;
-      rr(ctx, bx2, ry0, rcw, rch, 3);
-      ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = '#7c1d14';
-      rr(ctx, bx2 + 0.5, ry0 + 0.5, rcw - 1, rch - 1, 2.5);
-      ctx.stroke();
-      text(ctx, '1', bx2 + rcw / 2, ry0 + rch / 2, rcw * 0.5, '#ffd9d4', 'center');
+      var r2 = reserved[ri];
+      var bx2 = CW - pad - 2 - rw - (showN - 1 - ri) * step;
+      var by2 = midY - rh / 2;
+      var ctex = cardTex(r2.card, rw, rh);
+      ctx.drawImage(ctex.image, bx2, by2, rw, rh);
+      rcCards.push({ cx: bx2 + rw / 2, cy: midY, w: rw, h: rh, uid: r2.card.uid });
     }
-    text(ctx, '×' + reserved.length, CW - pad - 2, midY, Math.min(11, CH * 0.16), '#ffd9d4', 'right');
-    rc = { cx: (rx0 - 4 + CW - pad) / 2, cy: midY, w: CW - pad - rx0 + 4, h: rch + 8 };
   }
-  return rc;
+  return rcCards;
 }
 
 // ============================================================
@@ -1400,118 +1398,6 @@ var Home = {
       return;
     }
     if (key === 'home:start') { playSfx('start'); startGame(Home.players); }
-  },
-};
-
-// ============================================================
-// 保留牌模态
-// ============================================================
-var ReserveModal = {
-  visible: false,
-  player: null,     // 玩家对象
-  selected: null,   // 选中的 uid
-  group: null,
-  open: function (pi) {
-    var g = G.game;
-    this.visible = true;
-    this.player = g.players[pi];
-    this.selected = null;
-    this.render();
-  },
-  close: function () {
-    // 清理模态点击区（防累积）
-    SceneRoot.clickables = SceneRoot.clickables.filter(function (c) { return c.key.indexOf('mres:') !== 0; });
-    // 清理选中卡光圈（防残留）
-    if (this.player) this.player.reserved.forEach(function (r) { setGlow('mr' + r.card.uid, null); });
-    if (this.group) { SceneRoot.root.remove(this.group); disposeGroup(this.group); this.group = null; }
-    this.visible = false;
-    this.player = null;
-    this.selected = null;
-    GameScreen.refresh();
-  },
-  render: function () {
-    if (this.group) { SceneRoot.root.remove(this.group); disposeGroup(this.group); }
-    var g = this.group = new THREE.Group();
-    SceneRoot.root.add(g);
-    var W = R.W, H = R.H;
-    var p = this.player;
-
-    var shade = mkMeshIn(makeTex('mshade', W, H, function (ctx, w, h) {
-      ctx.fillStyle = 'rgba(5,8,14,0.72)';
-      ctx.fillRect(0, 0, w, h);
-    }), W, H, 0, 0, 9, g);
-    var bx = 20 - W / 2, by = H / 2 - H * 0.3, bw = W - 40, bh = Math.min(300, H * 0.5);
-    var panel = mkMeshIn(makeTex('mpanel', bw, bh, function (ctx, w, h) {
-      ctx.fillStyle = '#1d2637';
-      rr(ctx, 0, 0, w, h, 14);
-      ctx.fill();
-      ctx.strokeStyle = '#3d4f75';
-      ctx.lineWidth = 2;
-      rr(ctx, 2, 2, w - 4, h - 4, 12);
-      ctx.stroke();
-      text(ctx, '玩家' + (p.id + 1) + ' 的保留牌（点选一张购买）', w / 2, 26, 15, '#dfe8f8', 'center');
-    }), bw, bh, bx + bw / 2, by + bh / 2, 10, g);
-
-    // 牌
-    var cards = p.reserved;
-    var cw = Math.min(72, (bw - 60) / 3), ch = cw * 1.42;
-    var total = cards.length * (cw + 10) - 10;
-    var cx0 = bx + bw / 2 - total / 2 + cw / 2;
-    var cy = by + bh * 0.52;
-    var self = this;
-    cards.forEach(function (r, i) {
-      var x = cx0 + i * (cw + 10);
-      var m = mkMeshIn(cardTex(r.card, cw, ch), cw, ch, x, cy, 11, g);
-      addClickable('mres:' + r.card.uid, x, cy, cw, ch, 11);
-    });
-    // 按钮
-    var bbtnW = Math.min(180, bw * 0.42), bbtnH = 44;
-    var buyY = by + bh - 46;
-    mkMeshIn(btnTex('购买此牌', bbtnW, bbtnH, { bg: '#2e8b57', fg: '#fff', border: '#1f6b41', key: 'mbuy' }), bbtnW, bbtnH, bx + bw / 2 - bbtnW / 2 - 10, buyY, 11, g);
-    addClickable('mres:buy', bx + bw / 2 - bbtnW / 2 - 10, buyY, bbtnW, bbtnH, 11);
-    mkMeshIn(btnTex('关闭', bbtnW, bbtnH, { bg: '#3a465e', fg: '#cfd8e8', border: '#4a5874', key: 'mclose' }), bbtnW, bbtnH, bx + bw / 2 + bbtnW / 2 + 10, buyY, 11, g);
-    addClickable('mres:close', bx + bw / 2 + bbtnW / 2 + 10, buyY, bbtnW, bbtnH, 11);
-    this.data = { cards: cards, cx0: cx0, cw: cw, cy: cy, buyBtn: { x: bx + bw / 2 - bbtnW / 2 - 10, y: buyY, w: bbtnW, h: bbtnH } };
-    // 恢复选中高亮（clearScene/重渲染会清掉 glow，选中数据保留但视觉圈需重放）
-    if (this.selected !== null) {
-      var si = -1;
-      for (var si2 = 0; si2 < cards.length; si2++) if (cards[si2].card.uid === this.selected) { si = si2; break; }
-      if (si >= 0) {
-        var sx = cx0 + si * (cw + 10);
-        setGlow('mr' + this.selected, 'blue', sx, cy, cw, ch, 11.6);
-      }
-    }
-  },
-  onTap: function (key) {
-    if (key === 'mres:close') { playSfx('tap'); this.close(); return; }
-    if (key === 'mres:buy') {
-      if (this.selected === null) { playSfx('err'); return; }
-      var p = this.player;
-      var card = p.reserved.find(function (r) { return r.card.uid === this.selected; }, this).card;
-      if (!canAfford(p, card)) { playSfx('err'); return; }
-      execBuy(G.game, p, card, true);
-      playSfx('buy');
-      this.close();
-      // 回合结算（贵族检查/胜利检查）
-      if (G.game.phase !== 'end') endTurn(G.game);
-      if (G.game.phase === 'end') showScreen('end');
-      else GameScreen.refresh();
-      return;
-    }
-    if (key.indexOf('mres:') === 0) {
-      var uid = +key.slice(5);
-      this.selected = this.selected === uid ? null : uid;
-      playSfx('tap');
-      this.render();
-      // 高亮选中
-      var self = this;
-      this.player.reserved.forEach(function (r) {
-        var i = self.player.reserved.indexOf(r);
-        var x = self.data.cx0 + i * (self.data.cw + 10);
-        setGlow('mr' + r.card.uid, self.selected === r.card.uid ? 'blue' : 'green', x, self.data.cy, self.data.cw, self.data.ch, 11.6);
-      });
-      return;
-    }
   },
 };
 
@@ -1593,7 +1479,7 @@ var GameScreen = {
     var L = this.L = computeLayout();
     var g = G.game;
     this.gemPiles = {}; this.cardMeshes = {}; this.deckLabelNums = {};
-    this.deckMeshes = {}; this.nobleMeshes = {}; this.panelMeshes = {};
+    this.deckMeshes = {}; this.nobleMeshes = {}; this.panelMeshes = {}; this.resvSpots = {};
 
     var bg = makeTex('gbg', L.W, L.H, function (ctx, w, h) {
       var grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -1674,7 +1560,7 @@ var GameScreen = {
     var isHoriz = pos === 0 || pos === 1;
     var w = area.w, h = area.h;
     var isCurrent = g.current === pi && g.phase !== 'end';
-    var rcData = null;   // 横面板：{cx,cy,w,h} 内容坐标；竖面板：{wx,wy,w,h} 世界坐标
+    var rcCards = [];   // 保留牌内容坐标 [{cx,cy,w,h,uid}, ...]
 
     // 面板纹理：不缓存（每回合重绘，分数/宝石/当前玩家高亮变化；旧纹理随 mesh 销毁被 GC）
     G._pv = (G._pv || 0) + 1;
@@ -1687,7 +1573,7 @@ var GameScreen = {
       ctx.fill();
       if (isHoriz) {
         // 横面板：内容坐标系 = 纹理坐标系
-        rcData = drawPanelContent(ctx, W, H, p, pi, isCurrent);
+        rcCards = drawPanelContent(ctx, W, H, p, pi, isCurrent);
       } else {
         // 竖面板：纹理内旋转（左 +90° 内容顶部朝右、右 -90° 内容顶部朝左），mesh 不旋转
         var CW = H, CH = W;
@@ -1695,29 +1581,31 @@ var GameScreen = {
         ctx.translate(W / 2, H / 2);
         ctx.rotate(pos === 2 ? Math.PI / 2 : -Math.PI / 2);
         ctx.translate(-CW / 2, -CH / 2);
-        var rc = drawPanelContent(ctx, CW, CH, p, pi, isCurrent);
+        rcCards = drawPanelContent(ctx, CW, CH, p, pi, isCurrent);
         ctx.restore();
-        if (rc) {
-          // 内容坐标 → 世界（flipY：画布顶=屏幕顶）
-          //   左 rot+90：纹理 (tx,ty)=(W-cy, cx) → wx=area.x+W/2-cy, wy=area.y+H/2-cx
-          //   右 rot-90：纹理 (tx,ty)=(cy, H-cx) → wx=area.x+cy-W/2, wy=area.y+cx-H/2
-          if (pos === 2) rcData = { wx: area.x + W / 2 - rc.cy, wy: area.y + H / 2 - rc.cx, w: rc.h, h: rc.w };
-          else rcData = { wx: area.x + rc.cy - W / 2, wy: area.y + rc.cx - H / 2, w: rc.h, h: rc.w };
-        }
       }
     }, true);   // noCache：每回合重绘，防止纹理缓存无限增长
     var mesh = mkMesh(tex, w, h, area.x, area.y, 1);
     mesh.rotation.z = isHoriz ? PANEL_ROT[pos] : 0;   // 竖面板已在纹理内旋转，mesh 不转
     this.panelMeshes[pi] = mesh;
-    // 保留点击区 → 世界坐标（竖面板已给世界坐标；横面板经旋转换算）
-    if (rcData) {
-      if (rcData.wx !== undefined) {
-        addClickable('resvList:' + pi, rcData.wx, rcData.wy, rcData.w, rcData.h, 5);
+    // 每张保留牌的点击区 → 世界坐标 + 记录位置供光圈使用
+    var self2 = this;
+    rcCards.forEach(function (rc2) {
+      var wx, wy, ww, wh;
+      if (isHoriz) {
+        var rcw2 = panelLocalToWorld(area, pos, rc2.cx - w / 2, h / 2 - rc2.cy, rc2.w, rc2.h);
+        wx = rcw2.x; wy = rcw2.y; ww = rcw2.w; wh = rcw2.h;
       } else {
-        var rcw2 = panelLocalToWorld(area, pos, rcData.cx - w / 2, h / 2 - rcData.cy, rcData.w, rcData.h);
-        addClickable('resvList:' + pi, rcw2.x, rcw2.y, rcw2.w, rcw2.h, 5);
+        // 竖面板内容坐标 → 世界（w/h = area 宽高，与纹理回调参数 W/H 同值；flipY：画布顶=屏幕顶）
+        //   左 rot+90：纹理 (tx,ty)=(w-cy, cx) → wx=area.x+w/2-cy, wy=area.y+h/2-cx
+        //   右 rot-90：纹理 (tx,ty)=(cy, h-cx) → wx=area.x+cy-w/2, wy=area.y+cx-h/2
+        if (pos === 2) { wx = area.x + w / 2 - rc2.cy; wy = area.y + h / 2 - rc2.cx; }
+        else { wx = area.x + rc2.cy - w / 2; wy = area.y + rc2.cx - h / 2; }
+        ww = rc2.h; wh = rc2.w;
       }
-    }
+      addClickable('reserved:' + rc2.uid, wx, wy, ww, wh, 1.5);
+      self2.resvSpots[rc2.uid] = { x: wx, y: wy, w: ww, h: wh };
+    });
   },
 
   refresh: function () {
@@ -1828,7 +1716,7 @@ var GameScreen = {
         return '请点选 ' + maxPick + ' 种不同颜色宝石各 1 个（已选 ' + selN + '）';
       }
       case 'take2': return '请点选 1 个宝石堆，拿取 2 个（需 ≥4 个）';
-      case 'buy': return selN ? '已选牌：按「执行」购买（黄金自动补差）' : '请点选要购买的牌（绿色边缘=可买）';
+      case 'buy': return selN ? '已选牌：按「执行」购买（黄金自动补差）' : '请点选要购买的牌（绿色边缘=可买，含面板上的保留牌）';
       case 'reserve': return '请点选要保留的牌，同时获得 1 个黄金';
     }
     return '轮到你行动：请点选下方一种动作';
@@ -1858,6 +1746,19 @@ var GameScreen = {
         } else setGlow('c' + t + c, null);
       }
     }
+    // 面板内保留牌光圈：先全清，再按购买模式给当前玩家可买的牌加光圈
+    var spots = this.resvSpots || {};
+    g.players.forEach(function (pp) {
+      pp.reserved.forEach(function (r) { setGlow('rv' + r.card.uid, null); });
+    });
+    if (UI.mode === 'buy') {
+      p.reserved.forEach(function (r) {
+        var s = spots[r.card.uid];
+        if (!s || !canAfford(p, r.card)) return;
+        var key4 = 'reserved:' + r.card.uid;
+        setGlow('rv' + r.card.uid, UI.selected.indexOf(key4) >= 0 ? 'blue' : 'green', s.x, s.y, s.w, s.h, 1.5);
+      });
+    }
     // 贵族选择阶段
     if (g.phase === 'noble-choice') {
       g.nobleChoices.forEach(function (idx, i) {
@@ -1872,14 +1773,14 @@ var GameScreen = {
   rebuildPanels: function () {
     var g = G.game;
     if (!g) return;
-    // 清理上回合的“保留 N”点击区（否则数组无限膨胀）
-    SceneRoot.clickables = SceneRoot.clickables.filter(function (c) { return c.key.indexOf('resvList:') !== 0; });
+    // 清理上回合的保留牌点击区（否则数组无限膨胀）
+    SceneRoot.clickables = SceneRoot.clickables.filter(function (c) { return c.key.indexOf('reserved:') !== 0; });
     var self = this;
     g.players.forEach(function (p, pi) {
       var mesh = self.panelMeshes[pi];
       if (mesh) { SceneRoot.root.remove(mesh); disposeGroup(mesh); } // 释放 GPU 纹理
     });
-    this.panelMeshes = {};
+    this.panelMeshes = {}; this.resvSpots = {};
     for (var pi2 = 0; pi2 < g.nPlayers; pi2++) this.buildPanel(pi2);
   },
 
@@ -1894,14 +1795,17 @@ var GameScreen = {
       PauseModal.open();
       return;
     }
-    // 保留牌列表
-    if (key.indexOf('resvList:') === 0) {
-      var pi = +key.slice(9);
-      if (g.players[pi].reserved.length > 0) {
-        uiReset();
-        playSfx('tap');
-        ReserveModal.open(pi);
-      }
+    // 面板上的保留牌：点击进入购买模式并选中该牌（可负担时），否则错误提示
+    if (key.indexOf('reserved:') === 0) {
+      if (g.phase !== 'action') return;
+      var p0 = g.players[g.current];
+      var uid = +key.slice(9);
+      var rc = p0.reserved.find(function (r) { return r.card.uid === uid; });
+      if (!rc || !canAfford(p0, rc.card)) { playSfx('err'); return; }
+      if (UI.mode !== 'buy') uiSelectMode('buy');
+      var toggled = uiToggleSelect(g, key);
+      playSfx(toggled ? 'tap' : 'err');
+      this.refresh();
       return;
     }
     if (g.phase === 'noble-choice') {
@@ -2111,19 +2015,16 @@ function rebuildScreen() {
       // 构建失败：强制关闭模态并回退首页重建，避免空场景/模态与屏幕状态不一致
       console.error('屏幕重建失败，回退首页：', e);
       Screen.current = 'home';
-      ReserveModal.visible = false; ReserveModal.group = null;
       PauseModal.visible = false; PauseModal.group = null;
       try { clearScene(); Home.build(); } catch (e2) { console.error('回退首页重建失败：', e2); }
     }
   }
   try {
-    // 模态窗口保留打开并随新尺寸重渲染（与 PauseModal 一致，避免用户选中状态丢失）
-    if (ReserveModal.visible) ReserveModal.render();
+    // 模态窗口保留打开并随新尺寸重渲染（避免用户选中状态丢失）
     if (PauseModal.visible) PauseModal.render();
   } catch (e) {
     // 模态重渲染失败：强制关闭，避免 visible 卡住点击分发（dispatchTap 被模态分支吞掉）
     console.error('模态重渲染失败，已关闭：', e);
-    try { ReserveModal.close(); } catch (e2) { ReserveModal.visible = false; ReserveModal.group = null; }
     try { PauseModal.close(); } catch (e2) { PauseModal.visible = false; PauseModal.group = null; }
   }
 }
@@ -2132,11 +2033,6 @@ function dispatchTap(wx, wy) {
   if (PauseModal.visible) {
     var pkey = hitTest(wx, wy);
     if (pkey && pkey.indexOf('pause:') === 0) PauseModal.onTap(pkey);
-    return;
-  }
-  if (ReserveModal.visible) {
-    var mkey = hitTest(wx, wy);
-    if (mkey) ReserveModal.onTap(mkey);
     return;
   }
   var key = hitTest(wx, wy);
