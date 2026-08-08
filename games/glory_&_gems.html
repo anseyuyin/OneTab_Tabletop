@@ -200,7 +200,7 @@ const NOBLE_DEFS = [
 // 按人数配置：宝石/黄金初始数量、贵族卡张数
 function setupByPlayers(n) {
   const gemCount = n === 2 ? 4 : (n === 3 ? 5 : 7);
-  const goldCount = n === 2 ? 3 : (n === 3 ? 4 : 5);
+  const goldCount = 5;
   return { gemCount, goldCount, nobleCount: n + 1 };
 }
 
@@ -1173,8 +1173,12 @@ function computeLayout() {
   return L;
 }
 
-// 玩家 i 的面板位置：0底 1顶 2左 3右（与玩家编号一致）
-function panelForPlayer(n, i) { return i; }
+// 玩家 i 的面板位置：0底 1顶 2左 3右（席位次序顺时针，从上方起）
+//   2人：0下 1上（保持现状）；3人：0上 1下 2左；4人：0上 1右 2下 3左
+function panelForPlayer(n, i) {
+  var seat = n === 3 ? [1, 0, 2] : n === 4 ? [1, 3, 0, 2] : [0, 1];
+  return seat[i];
+}
 function panelKey(pos) { return ['bottom', 'top', 'left', 'right'][pos]; }
 
 // 横面板 mesh 旋转角（竖面板用纹理内旋转：左 +90° 内容顶部朝右、右 -90° 内容顶部朝左，mesh 不转）
@@ -1226,7 +1230,7 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   }
 
   // 回合徽章：金色菱形 + 当前记分（贴左上角，内缩避免贴边裁剪；玩家身份由主题色区分）
-  var db = CH * 0.30;
+  var db = CH * 0.30 * 0.7;   // 等比缩小 30%
   var bcx = pad + db * 0.95, bcy = CH * 0.36;
   ctx.save();
   ctx.translate(bcx, bcy);
@@ -1247,7 +1251,7 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
 
   // 资源圆：当前资源总数 / 持有上限，斜线分隔（每位玩家能同时持有的宝石含黄金上限为 10）
   var gemTotalMax = GEM_TOTAL_MAX;
-  var scr = CH * 0.27;
+  var scr = CH * 0.27 * 0.6;  // 等比缩小 40%
   var ccx = bcx + db * 0.9 + scr + 5, ccy = midY;
   ctx.beginPath();
   ctx.arc(ccx, ccy, scr, 0, Math.PI * 2);
@@ -1379,6 +1383,20 @@ var Home = {
     mkMesh(btnTex('开 始 游 戏', sbw, sbh, { bg: '#3f7fd4', fg: '#fff', border: '#2c5588', key: 'start' }), sbw, sbh, 0, H / 2 - H * 0.68, 2);
     addClickable('home:start', 0, H / 2 - H * 0.68, sbw, sbh, 2);
 
+    // 画布缩放控件：[-] 缩放 100% [+]（每 step ±10%，范围 50%~200%）
+    var zts = Math.min(13, W * 0.035);
+    var ztxt = '缩放 ' + Math.round(R.zoom * 100) + '%';
+    var ztw = (ztxt.length * zts + zts) * 1.1;      // 文本宽度（100%~200% 字符数恒定，布局不漂移）
+    var zbb = Math.min(44, W * 0.12);
+    var zgap = 14;
+    var zy = (H / 2 - H * 0.68) - sbh / 2 - 18 - zbb / 2;   // 开始按钮下方
+    var zxL = -(ztw / 2 + zgap + zbb / 2), zxR = -zxL;
+    mkMesh(btnTex('-', zbb, zbb, { bg: '#3a465e', fg: '#dfe8f8', border: '#4a5874', key: 'zo' }), zbb, zbb, zxL, zy, 2);
+    addClickable('home:zoomOut', zxL, zy, zbb, zbb, 2);
+    mkTextMesh(ztxt, 0, zy, zts, '#cfd8e8', { key: 'zoom', bold: false });
+    mkMesh(btnTex('+', zbb, zbb, { bg: '#3a465e', fg: '#dfe8f8', border: '#4a5874', key: 'zi' }), zbb, zbb, zxR, zy, 2);
+    addClickable('home:zoomIn', zxR, zy, zbb, zbb, 2);
+
     mkTextMesh('规则：轮流行动 · 拿宝石 / 买牌 / 保留 · 先达 15 分并完成本轮者胜', 0, H / 2 - H * 0.85, Math.min(13, W * 0.032), 'rgba(255,255,255,0.55)', { key: 'rules', bold: false });
     this.refresh();
   },
@@ -1395,6 +1413,13 @@ var Home = {
       Home.players = +key.slice(-1);
       Home.refresh();
       playSfx('tap');
+      return;
+    }
+    if (key === 'home:zoomIn' || key === 'home:zoomOut') {
+      playSfx('tap');
+      R.zoom = Math.max(0.5, Math.min(2, key === 'home:zoomIn' ? R.zoom * 1.1 : R.zoom / 1.1));
+      applyZoom();      // Three.js 内部逻辑尺寸缩放（R.W/R.H 变化），canvas 显示尺寸不变
+      rebuildScreen();  // 布局基准变化，重建当前屏幕（缩放文本同步刷新）
       return;
     }
     if (key === 'home:start') { playSfx('start'); startGame(Home.players); }
@@ -1934,7 +1959,7 @@ function goHome() {
 
 'use strict';
 
-var R = { W: 0, H: 0 };
+var R = { W: 0, H: 0, zoom: 1, _vw: 0, _vh: 0 };   // W/H：Three.js 内部逻辑尺寸（= 窗口基准 × zoom，布局/相机/渲染分辨率同基准）；_vw/_vh：窗口基准；zoom：等比缩放系数（1 = 100%）
 var renderer = null, scene = null, camera = null;
 
 function initApp() {
@@ -1971,8 +1996,10 @@ function initApp() {
     var dx = e.clientX - downX, dy = e.clientY - downY;
     if (Math.abs(dx) > 14 || Math.abs(dy) > 14) return;
     if (resizeTimer) return;   // 布局正在防抖适配中（点击区域尚未按新尺寸重建），忽略本次点击避免误触
-    var wx = e.clientX - R.W / 2;
-    var wy = R.H / 2 - e.clientY;
+    // canvas CSS 显示尺寸固定为窗口；逻辑尺寸 = R.W/R.H（×zoom），按 canvas 实际宽高换算世界坐标
+    var rect = renderer.domElement.getBoundingClientRect();
+    var wx = (e.clientX - rect.left) * (R.W / rect.width) - R.W / 2;
+    var wy = R.H / 2 - (e.clientY - rect.top) * (R.H / rect.height);
     dispatchTap(wx, wy);
   });
   el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -1985,15 +2012,22 @@ function initApp() {
 }
 
 var resizeTimer = null;   // resize 防抖定时器
-function resize() {
-  R.W = window.innerWidth;
-  R.H = window.innerHeight;
-  renderer.setSize(R.W, R.H);
+// 应用 Three.js 内部 UI 逻辑尺寸缩放：R.W/R.H（布局基准 + 渲染分辨率 + 相机范围）= 窗口基准 × zoom，
+// canvas CSS 显示尺寸保持窗口大小（updateStyle=false），UI 按百分比布局重排后始终铺满窗口、无黑边
+function applyZoom(updateStyle) {
+  R.W = Math.max(1, Math.round(R._vw * R.zoom));
+  R.H = Math.max(1, Math.round(R._vh * R.zoom));
+  renderer.setSize(R.W, R.H, !!updateStyle);
   camera.left = -R.W / 2;
   camera.right = R.W / 2;
   camera.top = R.H / 2;
   camera.bottom = -R.H / 2;
   camera.updateProjectionMatrix();
+}
+function resize() {
+  R._vw = window.innerWidth;
+  R._vh = window.innerHeight;
+  applyZoom(true);
   if (!Screen.current) return;   // 初始调用：屏幕尚未建立，交由 showScreen 构建
   // 防抖：窗口拖动期间只更新渲染器/相机，停止后统一重建一次，
   // 避免 resize 事件风暴导致每帧都重建整套 UI（大量重复绘制/堆叠/卡顿）
