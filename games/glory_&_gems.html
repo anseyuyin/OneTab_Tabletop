@@ -1101,11 +1101,13 @@ function computeLayout() {
   var gap = 3;
   var total = btnW * 4 + gap * 4 + execW;
   var bx, by, brot;
-  if (curPos === 0) { bx = L.stageCX; by = stageBottom + 28 + barH / 2; brot = 0; }
-  else if (curPos === 1) { bx = L.stageCX; by = H / 2 - topH - 28 - barH / 2; brot = Math.PI; }
+  // 操作栏整体向玩家信息面板移动 30px：原 28px 间距 → 操作栏区域边缘越过面板 2px（按钮行贴面板侧后仍距面板 8px）
+  var barShift = 30;
+  if (curPos === 0) { bx = L.stageCX; by = stageBottom + 28 - barShift + barH / 2; brot = 0; }
+  else if (curPos === 1) { bx = L.stageCX; by = H / 2 - topH - 28 + barShift - barH / 2; brot = Math.PI; }
   // 旋转方向：Three.js rotation.z 正角 = 逆时针。左玩家(头朝右)需按钮顶部朝右 → -π/2；右玩家(头朝左)需顶部朝左 → +π/2
-  else if (curPos === 2) { bx = -W / 2 + leftW + 28 + barH / 2; by = stageBottom + sh / 2; brot = -Math.PI / 2; }
-  else { bx = W / 2 - rightW - 28 - barH / 2; by = stageBottom + sh / 2; brot = Math.PI / 2; }
+  else if (curPos === 2) { bx = -W / 2 + leftW + 28 - barShift + barH / 2; by = stageBottom + sh / 2; brot = -Math.PI / 2; }
+  else { bx = W / 2 - rightW - 28 + barShift - barH / 2; by = stageBottom + sh / 2; brot = Math.PI / 2; }
   L.bar = { x: bx, y: by, rot: brot };
   // 按钮行贴"朝向玩家"的一侧（四边均为局部 -y：底/顶/左/右旋转后分别落到各自面板侧）
   var rowY = -(barH / 2 - 10 - btnH / 2);
@@ -1116,20 +1118,23 @@ function computeLayout() {
   // 说明文字：操作栏内"非面板侧"（远离横幅/面板，避免重叠），跟随旋转
   var msgLocal = barLocalToWorld(L.bar, 0, (barH / 2 - 10 - 12), 0, 0);
   L.bar.msg = { x: msgLocal.x, y: msgLocal.y, rot: brot };
+  // 回合横幅（黄色信息文本）：提示文字上方 30px，随操作栏统一旋转朝向当前玩家
+  var bannerLocal = barLocalToWorld(L.bar, 0, (barH / 2 - 10 - 12) + 30, 0, 0);
+  L.bar.banner = { x: bannerLocal.x, y: bannerLocal.y, rot: brot };
 
   // ===== 中央市场区（设计图）：左牌堆标签列 + 3×4 矿卡 + 宝石银行竖列 + 贵族卡竖列 =====
-  // 垂直范围固定（与操作栏在底部时相同），顶部操作栏时整体下移避让
+  // 市场区高度恒定；垂直方向以屏幕中心为轴对称居中——所有座位（含顶部操作栏）卡牌位置完全一致，
+  // 顶部/底部操作栏与市场内容之间均有足够空间（横幅恰好落在操作栏与内容之间的留白区）
   var mktH0 = (sy - 24) - (stageBottom + 28 + barH + 6);   // 市场区高度（恒定）
-  var mktT, mktB;
-  if (curPos === 1) { mktT = (H / 2 - topH - 28 - barH) - 6; mktB = mktT - mktH0; }
-  else { mktT = sy - 24; mktB = stageBottom + 28 + barH + 6; }
+  var mktT = mktH0 / 2, mktB = -mktH0 / 2;                 // 垂直对称居中于屏幕中心
   var mktH = mktT - mktB;
   var mktCY = (mktT + mktB) / 2;
   var rowGap = portrait ? 6 : 8;
   var g1 = portrait ? 5 : 8;                   // 元素间基础间隙
 
   var cardH = Math.floor((mktH - 2 * rowGap) / 3);
-  cardH = Math.max(46, Math.min(cardH, portrait ? 88 : 120));
+  // 横屏卡高上限 100（原 120）：为回合横幅在操作栏上方留出空间，使市场内容可整体居中且不与横幅重叠
+  cardH = Math.max(46, Math.min(cardH, portrait ? 88 : 100));
   var cardW = Math.round(cardH / 1.42);
   var labelW = Math.round(cardW * 0.6);
   var gemSize = Math.min(portrait ? 26 : 34, Math.floor((mktH - 20) / 6));
@@ -1558,7 +1563,8 @@ var GameScreen = {
     });
     mkMesh(bg, L.W, L.H, 0, 0, 0);
 
-    this.bannerMesh = mkTextMesh('', L.stageCX, L.stage.y - 11, 17, '#f5d76e', { key: 'banner', stroke: 'rgba(0,0,0,0.5)' });
+    this.bannerMesh = mkTextMesh('', L.bar.banner.x, L.bar.banner.y, 17, '#f5d76e', { key: 'banner', stroke: 'rgba(0,0,0,0.5)' });
+    this.bannerMesh.rotation.z = L.bar.banner.rot;
 
     // 暂停按钮（左上角）
     var pb = L.pause;
@@ -1686,7 +1692,7 @@ var GameScreen = {
 
     var txt = '玩家' + (g.current + 1) + ' · ' + p.theme.name + ' 的回合';
     if (g.endTriggered) txt += '（终局中）';
-    updateTextMesh(this.bannerMesh, txt, L.stageCX, L.stage.y - 11, 17, '#f5d76e', { key: 'banner', stroke: 'rgba(0,0,0,0.5)' });
+    updateTextMesh(this.bannerMesh, txt, L.bar.banner.x, L.bar.banner.y, 17, '#f5d76e', { key: 'banner', stroke: 'rgba(0,0,0,0.5)' });
 
     // 宝石银行竖列
     var keys = COLORS.concat(['Y']);
