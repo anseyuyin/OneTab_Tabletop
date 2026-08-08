@@ -316,6 +316,15 @@ function playerGemTotal(p) {
   for (var c in p.gems) s += p.gems[c];
   return s + p.gold;
 }
+// 资源总量上限：每位玩家最多同时持有 10 个宝石（含黄金）
+var GEM_TOTAL_MAX = 10;
+// 拿3色模式最多可选数：受「可拿颜色数」与「资源总量上限（剩余空间）」双重约束
+// 如 9/10 只能选 1 个、8/10 只能选 2 个；返回 0 表示不可选
+function take3MaxPick(g, p) {
+  var room = GEM_TOTAL_MAX - playerGemTotal(p);
+  var avail = COLORS.filter(function (c) { return g.bank[c] > 0 && p.gems[c] < 10; });
+  return Math.max(0, Math.min(3, avail.length, room));
+}
 
 // 玩家能买某牌吗？（宝石通用货币 + 黄金万能）
 function canAfford(p, card) {
@@ -557,11 +566,12 @@ function uiIsSelectable(g, key) {
 function uiToggleSelect(g, key) {
   if (g.phase !== 'action') return false;
   if (!uiIsSelectable(g, key)) return false;
+  var p = g.players[g.current];
   var idx = UI.selected.indexOf(key);
   if (idx >= 0) { UI.selected.splice(idx, 1); return true; }
   switch (UI.mode) {
     case 'take3':
-      if (UI.selected.length >= 3) return false;
+      if (UI.selected.length >= take3MaxPick(g, p)) return false;
       break;
     case 'take2':
     case 'buy':
@@ -579,9 +589,8 @@ function uiCanExecute(g) {
   var p = g.players[g.current];
   switch (UI.mode) {
     case 'take3': {
-      // 可选颜色总数（可拿的色）
-      var avail = COLORS.filter(function (c) { return g.bank[c] > 0 && p.gems[c] < 10; });
-      return UI.selected.length === Math.min(3, avail.length);
+      // 可选数量：受可拿颜色数与资源总量上限（剩余空间）约束
+      return UI.selected.length === take3MaxPick(g, p);
     }
     case 'take2': return UI.selected.length === 1;
     case 'buy': return UI.selected.length === 1;
@@ -1215,7 +1224,7 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
     ctx.stroke();
   }
 
-  // 回合徽章：金色菱形 + 玩家序号（贴左上角，内缩避免贴边裁剪）
+  // 回合徽章：金色菱形 + 当前记分（贴左上角，内缩避免贴边裁剪；玩家身份由主题色区分）
   var db = CH * 0.30;
   var bcx = pad + db * 0.95, bcy = CH * 0.36;
   ctx.save();
@@ -1233,9 +1242,10 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   rr(ctx, -ds, -ds, ds * 2, ds * 2, ds * 0.3);
   ctx.stroke();
   ctx.restore();
-  text(ctx, '' + (pi + 1), bcx, bcy + 1, db * 0.95, '#ffffff', 'center', true, 'rgba(0,0,0,0.35)');
+  text(ctx, '' + p.score, bcx, bcy + 1, db * 0.8, '#ffffff', 'center', true, 'rgba(0,0,0,0.35)');
 
-  // 分数圆：score / 15，斜线分隔
+  // 资源圆：当前资源总数 / 持有上限，斜线分隔（每位玩家能同时持有的宝石含黄金上限为 10）
+  var gemTotalMax = GEM_TOTAL_MAX;
   var scr = CH * 0.27;
   var ccx = bcx + db * 0.9 + scr + 5, ccy = midY;
   ctx.beginPath();
@@ -1251,8 +1261,8 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   ctx.strokeStyle = '#c9a227';
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  text(ctx, '' + p.score, ccx - scr * 0.32, ccy - scr * 0.32, scr * 0.64, '#3c4048', 'center');
-  text(ctx, '15', ccx + scr * 0.38, ccy + scr * 0.38, scr * 0.48, '#8a6d1d', 'center');
+  text(ctx, '' + playerGemTotal(p), ccx - scr * 0.32, ccy - scr * 0.32, scr * 0.64, '#3c4048', 'center');
+  text(ctx, '' + gemTotalMax, ccx + scr * 0.38, ccy + scr * 0.38, scr * 0.48, '#8a6d1d', 'center');
 
   // 保留牌区（右端，红色牌背叠放 + 总数）
   var reserved = p.reserved;
@@ -1462,6 +1472,15 @@ var ReserveModal = {
     mkMeshIn(btnTex('关闭', bbtnW, bbtnH, { bg: '#3a465e', fg: '#cfd8e8', border: '#4a5874', key: 'mclose' }), bbtnW, bbtnH, bx + bw / 2 + bbtnW / 2 + 10, buyY, 11, g);
     addClickable('mres:close', bx + bw / 2 + bbtnW / 2 + 10, buyY, bbtnW, bbtnH, 11);
     this.data = { cards: cards, cx0: cx0, cw: cw, cy: cy, buyBtn: { x: bx + bw / 2 - bbtnW / 2 - 10, y: buyY, w: bbtnW, h: bbtnH } };
+    // 恢复选中高亮（clearScene/重渲染会清掉 glow，选中数据保留但视觉圈需重放）
+    if (this.selected !== null) {
+      var si = -1;
+      for (var si2 = 0; si2 < cards.length; si2++) if (cards[si2].card.uid === this.selected) { si = si2; break; }
+      if (si >= 0) {
+        var sx = cx0 + si * (cw + 10);
+        setGlow('mr' + this.selected, 'blue', sx, cy, cw, ch, 11.6);
+      }
+    }
   },
   onTap: function (key) {
     if (key === 'mres:close') { playSfx('tap'); this.close(); return; }
@@ -1756,9 +1775,15 @@ var GameScreen = {
     // 面板重绘
     this.rebuildPanels();
 
-    // 动作按钮
+    // 动作按钮（资源总量上限：每人最多同时持有 10 个含黄金；满 10 时不可再拿/保留，9 时不可拿2个）
     var canAct = g.phase === 'action';
-    var actions = [canTakeThree(g, p), canTakeTwo(g, p), canBuy(g, p), canReserve(g, p)];
+    var total = playerGemTotal(p);
+    var actions = [
+      canTakeThree(g, p) && total < GEM_TOTAL_MAX,
+      canTakeTwo(g, p) && total <= GEM_TOTAL_MAX - 2,
+      canBuy(g, p),
+      canReserve(g, p) && total < GEM_TOTAL_MAX
+    ];
     var actLabels = ['拿3色', '拿2个', '购买', '保留'];
     var modes = ['take3', 'take2', 'buy', 'reserve'];
     for (var bi = 0; bi < 4; bi++) {
@@ -1799,8 +1824,8 @@ var GameScreen = {
     var selN = UI.selected.length;
     switch (UI.mode) {
       case 'take3': {
-        var avail = COLORS.filter(function (c) { return g.bank[c] > 0 && p.gems[c] < 10; });
-        return '请点选 ' + Math.min(3, avail.length) + ' 种不同颜色宝石各 1 个（已选 ' + selN + '）';
+        var maxPick = take3MaxPick(g, p);
+        return '请点选 ' + maxPick + ' 种不同颜色宝石各 1 个（已选 ' + selN + '）';
       }
       case 'take2': return '请点选 1 个宝石堆，拿取 2 个（需 ≥4 个）';
       case 'buy': return selN ? '已选牌：按「执行」购买（黄金自动补差）' : '请点选要购买的牌（绿色边缘=可买）';
@@ -1811,13 +1836,15 @@ var GameScreen = {
 
   refreshTargetGlows: function (g) {
     var L = this.L;
+    var p = g.players[g.current];
     var keys = COLORS.concat(['Y']);
     for (var i = 0; i < 6; i++) {
       var k = keys[i];
       var key = 'gem:' + k;
       var gx = L.gems.x, gy = L.gems.ys[i], gs = L.gems.size;
       var sel = UI.selected.indexOf(key) >= 0;
-      if ((UI.mode === 'take3' || UI.mode === 'take2') && uiIsSelectable(g, key)) {
+      var canPickMore = UI.mode !== 'take3' || UI.selected.length < take3MaxPick(g, p);
+      if ((UI.mode === 'take3' || UI.mode === 'take2') && uiIsSelectable(g, key) && canPickMore) {
         setGlow('g' + k, sel ? 'blue' : 'green', gx, gy, gs + 4, gs + 4, 2.6);
       } else setGlow('g' + k, null);
     }
@@ -2021,7 +2048,9 @@ function initApp() {
   scene = new THREE.Scene();
   R.scene = scene;
   camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
-  camera.position.z = 10;
+  // 相机须放在 z=30：近裁剪面在 world z = 29.9，保证模态层（z=10/11）与
+  // 选中高亮（z=11.6+0.5）不被近平面裁掉；far=100 内最远可见 world z=-70，场景无更远物体
+  camera.position.z = 30;
   R.camera = camera;
   R.renderer = renderer;
 
@@ -2037,6 +2066,7 @@ function initApp() {
   el.addEventListener('pointerup', function (e) {
     var dx = e.clientX - downX, dy = e.clientY - downY;
     if (Math.abs(dx) > 14 || Math.abs(dy) > 14) return;
+    if (resizeTimer) return;   // 布局正在防抖适配中（点击区域尚未按新尺寸重建），忽略本次点击避免误触
     var wx = e.clientX - R.W / 2;
     var wy = R.H / 2 - e.clientY;
     dispatchTap(wx, wy);
@@ -2050,6 +2080,7 @@ function initApp() {
   requestAnimationFrame(animate);
 }
 
+var resizeTimer = null;   // resize 防抖定时器
 function resize() {
   R.W = window.innerWidth;
   R.H = window.innerHeight;
@@ -2059,12 +2090,43 @@ function resize() {
   camera.top = R.H / 2;
   camera.bottom = -R.H / 2;
   camera.updateProjectionMatrix();
-  // 重建当前屏幕以适配新尺寸
-  if (ReserveModal.visible) ReserveModal.close();
-  if (Screen.current === 'home') Home.build();
-  else if (Screen.current === 'game') GameScreen.build();
-  else if (Screen.current === 'end') EndScreen.build();
-  if (PauseModal.visible) PauseModal.render();}
+  if (!Screen.current) return;   // 初始调用：屏幕尚未建立，交由 showScreen 构建
+  // 防抖：窗口拖动期间只更新渲染器/相机，停止后统一重建一次，
+  // 避免 resize 事件风暴导致每帧都重建整套 UI（大量重复绘制/堆叠/卡顿）
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(rebuildScreen, 200);
+}
+
+// 重建当前屏幕以适配新尺寸（先清空旧场景，杜绝重复绘制与堆叠）
+function rebuildScreen() {
+  resizeTimer = null;
+  if (Screen.current) {
+    clearScene();
+    TEX.clear();   // 清掉旧尺寸纹理缓存索引（build 后新纹理保留在缓存中供 refresh 命中）
+    try {
+      if (Screen.current === 'home') Home.build();
+      else if (Screen.current === 'game') GameScreen.build();
+      else if (Screen.current === 'end') EndScreen.build();
+    } catch (e) {
+      // 构建失败：强制关闭模态并回退首页重建，避免空场景/模态与屏幕状态不一致
+      console.error('屏幕重建失败，回退首页：', e);
+      Screen.current = 'home';
+      ReserveModal.visible = false; ReserveModal.group = null;
+      PauseModal.visible = false; PauseModal.group = null;
+      try { clearScene(); Home.build(); } catch (e2) { console.error('回退首页重建失败：', e2); }
+    }
+  }
+  try {
+    // 模态窗口保留打开并随新尺寸重渲染（与 PauseModal 一致，避免用户选中状态丢失）
+    if (ReserveModal.visible) ReserveModal.render();
+    if (PauseModal.visible) PauseModal.render();
+  } catch (e) {
+    // 模态重渲染失败：强制关闭，避免 visible 卡住点击分发（dispatchTap 被模态分支吞掉）
+    console.error('模态重渲染失败，已关闭：', e);
+    try { ReserveModal.close(); } catch (e2) { ReserveModal.visible = false; ReserveModal.group = null; }
+    try { PauseModal.close(); } catch (e2) { PauseModal.visible = false; PauseModal.group = null; }
+  }
+}
 
 function dispatchTap(wx, wy) {
   if (PauseModal.visible) {
