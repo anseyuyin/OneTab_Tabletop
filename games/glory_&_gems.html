@@ -1116,10 +1116,10 @@ function computeLayout() {
   for (var i = 0; i < 4; i++) L.bar.btns.push(barLocalToWorld(L.bar, startX + i * (btnW + gap), rowY, btnW, btnH));
   L.bar.exec = barLocalToWorld(L.bar, startX + 3 * (btnW + gap) + btnW / 2 + gap + execW / 2, rowY, execW, btnH);
   // 说明文字：操作栏内"非面板侧"（远离横幅/面板，避免重叠），跟随旋转
-  var msgLocal = barLocalToWorld(L.bar, 0, (barH / 2 - 10 - 12), 0, 0);
+  var msgLocal = barLocalToWorld(L.bar, 0, (barH / 2 - 10 - 12) + 5, 0, 0);
   L.bar.msg = { x: msgLocal.x, y: msgLocal.y, rot: brot };
-  // 回合横幅（黄色信息文本）：提示文字上方 30px，随操作栏统一旋转朝向当前玩家
-  var bannerLocal = barLocalToWorld(L.bar, 0, (barH / 2 - 10 - 12) + 30, 0, 0);
+  // 回合横幅（黄色信息文本）：提示文字上方 30px（随提示文字上移），随操作栏统一旋转朝向当前玩家
+  var bannerLocal = barLocalToWorld(L.bar, 0, (barH / 2 - 10 - 12) + 5 + 30, 0, 0);
   L.bar.banner = { x: bannerLocal.x, y: bannerLocal.y, rot: brot };
 
   // ===== 中央市场区（设计图）：左牌堆标签列 + 3×4 矿卡 + 宝石银行竖列 + 贵族卡竖列 =====
