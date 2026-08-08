@@ -1137,7 +1137,7 @@ function computeLayout() {
   cardH = Math.max(46, Math.min(cardH, portrait ? 88 : 100));
   var cardW = Math.round(cardH / 1.42);
   var labelW = Math.round(cardW * 0.6);
-  var gemSize = Math.min(portrait ? 26 : 34, Math.floor((mktH - 20) / 6));
+  var gemSize = Math.min(portrait ? 39 : 51, Math.floor((mktH - 20) / 6));   // 宝石筹码直径（原 26/34，放大 50%）
   var nt = n + 1;
   var nobleH = Math.min(cardH, Math.floor((mktH - (nt - 1) * 5) / nt));
   var nobleW = Math.round(nobleH / 1.42);
