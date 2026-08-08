@@ -977,25 +977,30 @@ function updateTextMesh(mesh, str, x, y, size, color, opts) {
   mesh.scale.set((str.length * size + size) * 1.1 / mesh.geometry.parameters.width, size * 1.6 / mesh.geometry.parameters.height, 1);
 }
 
-// 注册可点击区域
-function addClickable(key, x, y, w, h, z) {
-  SceneRoot.clickables.push({ key: key, x: x, y: y, w: w, h: h, z: z || 1 });
+// 注册可点击区域（rot：区域绕中心旋转角，命中时自动反旋转检测）
+function addClickable(key, x, y, w, h, z, rot) {
+  SceneRoot.clickables.push({ key: key, x: x, y: y, w: w, h: h, z: z || 1, rot: rot || 0 });
 }
-// 命中测试（z 大者优先）
+// 命中测试（z 大者优先；支持旋转区域：将触点绕中心反旋转后检测，含浮点容差）
 function hitTest(wx, wy) {
   var best = null;
   for (var i = 0; i < SceneRoot.clickables.length; i++) {
     var c = SceneRoot.clickables[i];
-    if (Math.abs(wx - c.x) <= c.w / 2 && Math.abs(wy - c.y) <= c.h / 2) {
-      if (!best || c.z > best.z) best = c;
+    var tx = wx - c.x, ty = wy - c.y;
+    if (c.rot) {
+      var cos = Math.cos(-c.rot), sin = Math.sin(-c.rot);
+      var rx = tx * cos - ty * sin, ry = tx * sin + ty * cos;
+      if (Math.abs(rx) <= c.w / 2 + 1e-6 && Math.abs(ry) <= c.h / 2 + 1e-6 && (!best || c.z > best.z)) best = c;
+    } else if (Math.abs(tx) <= c.w / 2 && Math.abs(ty) <= c.h / 2 && (!best || c.z > best.z)) {
+      best = c;
     }
   }
   return best ? best.key : null;
 }
 
-// 发光管理：为某 key 设置/清除发光
+// 发光管理：为某 key 设置/清除发光（rot：发光矩形绕中心旋转角，用于旋转的操作栏按钮）
 var GLOW_COLOR = { green: '#35e06a', blue: '#3aa0ff', gold: '#ffd75e' };
-function setGlow(key, color, x, y, w, h, z) {
+function setGlow(key, color, x, y, w, h, z, rot) {
   var g = SceneRoot.glows.get(key);
   if (!color) {
     if (g) { SceneRoot.root.remove(g.mesh); SceneRoot.glows.delete(key); }
@@ -1007,6 +1012,7 @@ function setGlow(key, color, x, y, w, h, z) {
       map: tex, transparent: true, alphaTest: 0.02, depthWrite: false
     }));
     mesh.position.set(x, y, (z === undefined ? 1 : z) + 0.5);
+    if (rot) mesh.rotation.z = rot;
     SceneRoot.root.add(mesh);
     g = { mesh: mesh, phase: Math.random() * Math.PI * 2 };
     SceneRoot.glows.set(key, g);
@@ -1014,6 +1020,8 @@ function setGlow(key, color, x, y, w, h, z) {
   g.color = color;
   g.x = x; g.y = y; g.w = w + 12; g.h = h + 12;
   g.mesh.position.set(x, y, (z === undefined ? 1 : z) + 0.5);
+  // 换旋转（布局位置随回合变化后，发光矩形同步）
+  if (g.rot !== rot) { g.rot = rot; g.mesh.rotation.z = rot || 0; }
   // 换颜色
   if (g.color !== color) {
     g.mesh.material.map = glowTex(w + 12, h + 12, color);
@@ -1029,7 +1037,7 @@ function updateGlows(t) {
   });
 }
 // 快速设置发光矩形（供布局用）
-function glowRect(key, color, x, y, w, h, z) { setGlow(key, color, x, y, w, h, z); }
+function glowRect(key, color, x, y, w, h, z, rot) { setGlow(key, color, x, y, w, h, z, rot); }
 
 // 创建宝石堆（圆片 + 数量文字）
 function gemPileGroup(key, colorKey, x, y, size, z) {
@@ -1082,30 +1090,41 @@ function computeLayout() {
   // 暂停按钮（屏幕左上角）
   L.pause = { x: -W / 2 + 30, y: H / 2 - 24, w: 48, h: 30 };
 
-  // 操作栏：位于舞台底部，底边与底部面板保持 28px 间距（避免按钮遮挡玩家信息）
-  var barH = portrait ? 92 : 104;
+  // 操作栏：跟随当前玩家座位（pos: 0底 1顶 2左 3右），旋转朝向该玩家；整体缩小 30%
+  var curPos = G.game ? panelForPlayer(n, G.game.current) : 0;
+  L.curPos = curPos;
+  var barH = Math.round((portrait ? 92 : 104) * 0.7);      // 操作栏高（缩小30%）
   var stageBottom = sy - sh;
-  var barBottom = stageBottom + 28;   // 操作栏底边（世界 y）
-  var barTop = barBottom + barH;      // 操作栏顶边
-  var barY = barBottom + barH / 2;    // 操作栏中心
-  L.bar = { y: barY, h: barH };
-  var btnW = Math.max(26, Math.min(84, (sw - 16 - 76) / 4));   // 4 动作按钮 + 执行按钮(76) 整体自适应
-  var btnH = portrait ? 40 : 48;
-  var gap = 4;
-  var total = btnW * 4 + gap * 4 + 76;
-  var rowY = barTop - 10 - btnH / 2;   // 按钮行（操作栏内底部）
-  L.bar.rowY = rowY; L.bar.btnW = btnW; L.bar.btnH = btnH;
-  var startX = sx + (sw - total) / 2 + btnW / 2;
+  var execW = Math.round(76 * 0.7);                        // 执行按钮宽（缩小30%）
+  var btnW = Math.max(18, Math.round(Math.min(84, (sw - 16 - execW) / 4) * 0.7));
+  var btnH = Math.round((portrait ? 40 : 48) * 0.7);       // 按钮高（缩小30%）
+  var gap = 3;
+  var total = btnW * 4 + gap * 4 + execW;
+  var bx, by, brot;
+  if (curPos === 0) { bx = L.stageCX; by = stageBottom + 28 + barH / 2; brot = 0; }
+  else if (curPos === 1) { bx = L.stageCX; by = H / 2 - topH - 28 - barH / 2; brot = Math.PI; }
+  // 旋转方向：Three.js rotation.z 正角 = 逆时针。左玩家(头朝右)需按钮顶部朝右 → -π/2；右玩家(头朝左)需顶部朝左 → +π/2
+  else if (curPos === 2) { bx = -W / 2 + leftW + 28 + barH / 2; by = stageBottom + sh / 2; brot = -Math.PI / 2; }
+  else { bx = W / 2 - rightW - 28 - barH / 2; by = stageBottom + sh / 2; brot = Math.PI / 2; }
+  L.bar = { x: bx, y: by, rot: brot };
+  // 按钮行贴"朝向玩家"的一侧（四边均为局部 -y：底/顶/左/右旋转后分别落到各自面板侧）
+  var rowY = -(barH / 2 - 10 - btnH / 2);
+  var startX = -total / 2 + btnW / 2;
   L.bar.btns = [];
-  for (var i = 0; i < 4; i++) L.bar.btns.push({ x: startX + i * (btnW + gap), y: rowY, w: btnW, h: btnH });
-  L.bar.exec = { x: startX + 3 * (btnW + gap) + btnW / 2 + gap + 38, y: rowY, w: 76, h: btnH };
-  L.bar.msgY = rowY + btnH / 2 + 14;  // 说明文字在按钮行上方
+  for (var i = 0; i < 4; i++) L.bar.btns.push(barLocalToWorld(L.bar, startX + i * (btnW + gap), rowY, btnW, btnH));
+  L.bar.exec = barLocalToWorld(L.bar, startX + 3 * (btnW + gap) + btnW / 2 + gap + execW / 2, rowY, execW, btnH);
+  // 说明文字：操作栏内"非面板侧"（远离横幅/面板，避免重叠），跟随旋转
+  var msgLocal = barLocalToWorld(L.bar, 0, (barH / 2 - 10 - 12), 0, 0);
+  L.bar.msg = { x: msgLocal.x, y: msgLocal.y, rot: brot };
 
   // ===== 中央市场区（设计图）：左牌堆标签列 + 3×4 矿卡 + 宝石银行竖列 + 贵族卡竖列 =====
-  var areaTop = sy - 24;                       // 舞台顶内侧（横幅下方）
-  var areaBottom = barTop + 6;                 // 操作栏上方
-  var mktH = areaTop - areaBottom;
-  var mktCY = (areaTop + areaBottom) / 2;
+  // 垂直范围固定（与操作栏在底部时相同），顶部操作栏时整体下移避让
+  var mktH0 = (sy - 24) - (stageBottom + 28 + barH + 6);   // 市场区高度（恒定）
+  var mktT, mktB;
+  if (curPos === 1) { mktT = (H / 2 - topH - 28 - barH) - 6; mktB = mktT - mktH0; }
+  else { mktT = sy - 24; mktB = stageBottom + 28 + barH + 6; }
+  var mktH = mktT - mktB;
+  var mktCY = (mktT + mktB) / 2;
   var rowGap = portrait ? 6 : 8;
   var g1 = portrait ? 5 : 8;                   // 元素间基础间隙
 
@@ -1118,10 +1137,25 @@ function computeLayout() {
   var nobleH = Math.min(cardH, Math.floor((mktH - (nt - 1) * 5) / nt));
   var nobleW = Math.round(nobleH / 1.42);
 
-  // 水平预算不足时整体等比收缩
+  // 水平：默认舞台全宽、内容居中，卡牌位置与底部座位完全一致；
+  // 仅当左/右座位两侧留白不足以容纳操作栏（28 间距 + barH 厚度 + 6 间隙）时才避让收缩
+  var mktL = sx, mktR = sx + sw;
+  var mktW = mktR - mktL;
   var totalW = labelW + g1 + cardW * 4 + g1 * 3 + g1 * 2 + gemSize + g1 * 2 + nobleW;
-  var availW = sw - (portrait ? 10 : 18);
-  if (totalW > availW) {
+  var availW = mktW - (portrait ? 10 : 18);
+  if (curPos === 2 || curPos === 3) {
+    var contentW = Math.min(totalW, availW);          // 收缩到预算后的内容宽
+    var margin = (mktW - contentW) / 2;               // 内容居中时单侧留白
+    if (margin < 28 + barH + 6) {                     // 留白不足才避让
+      if (curPos === 2) mktL = sx + 28 + barH + 6;    // 左侧操作栏：市场右移
+      else mktR = sx + sw - (28 + barH) - 6;          // 右侧操作栏：市场左移
+      mktW = mktR - mktL;
+      availW = mktW - (portrait ? 10 : 18);
+    }
+  }
+
+  // 水平预算不足时整体等比收缩（循环迭代到收敛，避免触及下限后仍超宽）
+  while (totalW > availW && (cardW > 24 || labelW > 30 || gemSize > 18 || nobleW > 22)) {
     var k = availW / totalW;
     cardW = Math.max(24, Math.floor(cardW * k));
     cardH = Math.round(cardW * 1.42);
@@ -1131,7 +1165,7 @@ function computeLayout() {
     nobleH = Math.round(nobleW * 1.42);
     totalW = labelW + g1 + cardW * 4 + g1 * 3 + g1 * 2 + gemSize + g1 * 2 + nobleW;
   }
-  var x0 = sx + (sw - totalW) / 2;             // 市场左缘
+  var x0 = Math.max(mktL, mktL + (mktW - totalW) / 2);   // 市场左缘（窄屏时贴避让边界，不越过操作栏）
   var labelX = x0 + labelW / 2;
   var cardsX0 = x0 + labelW + g1;
   var gemX = cardsX0 + cardW * 4 + g1 * 3 + g1 * 2 + gemSize / 2;
@@ -1193,6 +1227,14 @@ function panelLocalToWorld(area, pos, lx, ly, w, h) {
   else if (rot < 0) { wx = area.x + ly; wy = area.y - lx; ww = h; wh = w; }
   else { wx = area.x - ly; wy = area.y + lx; ww = h; wh = w; }
   return { x: wx, y: wy, w: ww, h: wh };
+}
+
+// 操作栏局部坐标（中心为原点，右=x+、上=y+，含旋转角）→ 世界坐标（宽高不变，旋转由命中测试/网格处理）
+function barLocalToWorld(bar, lx, ly, w, h) {
+  var rot = bar.rot;
+  var dx = lx * Math.cos(rot) - ly * Math.sin(rot);
+  var dy = lx * Math.sin(rot) + ly * Math.cos(rot);
+  return { x: bar.x + dx, y: bar.y + dy, w: w, h: h, rot: rot };
 }
 
 // ============================================================
@@ -1557,18 +1599,21 @@ var GameScreen = {
       addClickable('gem:' + k, L.gems.x, gy, L.gems.size + 6, L.gems.size + 6, 2);
     }
 
-    // 操作栏按钮
+    // 操作栏按钮（跟随当前玩家座位旋转）
     var actLabels = ['拿3色', '拿2个', '购买', '保留'];
     for (var bi = 0; bi < 4; bi++) {
       var b = L.bar.btns[bi];
       var mesh = mkMesh(btnTex(actLabels[bi], b.w, b.h, { bg: '#2c3a56', fg: '#e8eef8', border: '#3d4f75', key: 'act' + bi }), b.w, b.h, b.x, b.y, 4);
+      mesh.rotation.z = b.rot;
       this.actionBtnMeshes[bi] = mesh;
-      addClickable('act:' + bi, b.x, b.y, b.w, b.h, 4);
+      addClickable('act:' + bi, b.x, b.y, b.w, b.h, 4, b.rot);
     }
     var e = L.bar.exec;
     this.execBtnMesh = mkMesh(btnTex('执行 ✓', e.w, e.h, { bg: '#2e8b57', fg: '#fff', border: '#1f6b41', key: 'exec' }), e.w, e.h, e.x, e.y, 4);
-    addClickable('exec', e.x, e.y, e.w, e.h, 4);
-    this.msgMesh = mkTextMesh('', L.stageCX, L.bar.msgY, 13, '#cfe0f5', { key: 'msg' });
+    this.execBtnMesh.rotation.z = e.rot;
+    addClickable('exec', e.x, e.y, e.w, e.h, 4, e.rot);
+    this.msgMesh = mkTextMesh('', L.bar.msg.x, L.bar.msg.y, 13, '#cfe0f5', { key: 'msg' });
+    this.msgMesh.rotation.z = L.bar.msg.rot;
 
     // 玩家面板
     for (var pi = 0; pi < g.nPlayers; pi++) this.buildPanel(pi);
@@ -1708,7 +1753,7 @@ var GameScreen = {
         ? (sel ? { bg: '#1f4e8a', fg: '#fff', border: '#3aa0ff', key: 'act' + bi + 's' } : { bg: '#2c3a56', fg: '#e8eef8', border: '#3d4f75', key: 'act' + bi })
         : { bg: '#232a38', fg: '#5a6478', border: '#2c3342', key: 'act' + bi + 'd' });
       mesh.material.needsUpdate = true;
-      if (active) setGlow('act' + bi, sel ? 'blue' : 'green', b.x, b.y, b.w, b.h, 4.6);
+      if (active) setGlow('act' + bi, sel ? 'blue' : 'green', b.x, b.y, b.w, b.h, 4.6, b.rot);
       else setGlow('act' + bi, null);
     }
 
@@ -1719,13 +1764,13 @@ var GameScreen = {
       ? { bg: '#2e8b57', fg: '#fff', border: '#35e06a', key: 'exe' }
       : { bg: '#23302a', fg: '#4c6258', border: '#2c3a33', key: 'exed' });
     this.execBtnMesh.material.needsUpdate = true;
-    if (canExec) setGlow('execg', 'green', e.x, e.y, e.w, e.h, 4.6);
+    if (canExec) setGlow('execg', 'green', e.x, e.y, e.w, e.h, 4.6, e.rot);
     else setGlow('execg', null);
 
     // 说明文字（窄屏时缩小字号避免与按钮重叠）
     var msg = this.msgFor(g);
     var msgSize = Math.min(13, Math.max(9, Math.floor((L.stage.w * 0.85) / Math.max(6, msg.length))));
-    updateTextMesh(this.msgMesh, msg, L.stageCX, L.bar.msgY, msgSize, '#cfe0f5', { key: 'msg' });
+    updateTextMesh(this.msgMesh, msg, L.bar.msg.x, L.bar.msg.y, msgSize, '#cfe0f5', { key: 'msg' });
 
     // 目标发光
     this.refreshTargetGlows(g);
@@ -1846,7 +1891,7 @@ var GameScreen = {
         if (uiConfirmNoble(g)) {
           playSfx('buy');
           if (g.phase === 'end') showScreen('end');
-          else this.refresh();
+          else showScreen('game');   // 重建：操作栏跟随新回合玩家座位
         } else playSfx('err');
       }
       return;
@@ -1867,7 +1912,7 @@ var GameScreen = {
       if (r.ok) {
         playSfx('buy');
         if (g.phase === 'end') showScreen('end');
-        else this.refresh();
+        else showScreen('game');   // 重建：操作栏跟随新回合玩家座位
       } else playSfx('err');
       return;
     }
