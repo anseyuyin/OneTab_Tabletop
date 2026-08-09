@@ -326,24 +326,14 @@ function take3MaxPick(g, p) {
   return Math.max(0, Math.min(3, avail.length, room));
 }
 
-// 玩家能买某牌吗？（宝石通用货币 + 黄金万能）
+// 玩家能买某牌吗？普通宝石只能抵扣对应颜色，各色不足的缺口用黄金（万能）补齐
 function canAfford(p, card) {
-  var need = 0;
+  var goldNeed = 0;
   for (var i = 0; i < 5; i++) {
     var deficit = card.cost[i] - p.cards[COLORS[i]];
-    if (deficit > 0) need += deficit;
+    if (deficit > 0) goldNeed += Math.max(0, deficit - p.gems[COLORS[i]]);
   }
-  return playerGemTotal(p) >= need;
-}
-
-// 买牌需支付的宝石数量（扣除开发卡减免后）
-function costAfterDiscount(p, card) {
-  var need = 0;
-  for (var i = 0; i < 5; i++) {
-    var deficit = card.cost[i] - p.cards[COLORS[i]];
-    if (deficit > 0) need += deficit;
-  }
-  return need;
+  return p.gold >= goldNeed;
 }
 
 // ---------- 动作合法性 ----------
@@ -392,20 +382,15 @@ function execReserve(g, p, tier, col) {
   pushLog(g, p, '保留 1 张' + tier + '级牌，获得 1 个黄金');
 }
 function execBuy(g, p, card, fromReserved) {
-  // 支付：先扣普通宝石（任意色），不足部分用黄金；支付物归还银行
-  var need = costAfterDiscount(p, card);
-  var gems = playerGemTotal(p);
-  var nonGold = gems - p.gold;
-  var goldUse = Math.max(0, need - nonGold);
-  // 扣宝石：从持有的非黄金宝石里扣 need - goldUse 个（按白蓝绿红黑顺序扣减）
-  var toPay = need - goldUse;
-  var remaining = toPay;
-  for (var i = 0; i < 5 && remaining > 0; i++) {
+  // 支付：先按颜色用对应宝石抵扣，各色不足的缺口用黄金（万能）补齐；支付物归还银行
+  var goldUse = 0;
+  for (var i = 0; i < 5; i++) {
     var c = COLORS[i];
-    var take = Math.min(p.gems[c], remaining);
+    var deficit = Math.max(0, card.cost[i] - p.cards[c]);
+    var take = Math.min(p.gems[c], deficit);
     p.gems[c] -= take;
     g.bank[c] += take;          // 归还银行
-    remaining -= take;
+    goldUse += deficit - take;
   }
   p.gold -= goldUse;
   g.gold += goldUse;            // 归还黄金
