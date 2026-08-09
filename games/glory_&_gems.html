@@ -25,6 +25,76 @@
   #loading .gem { font-size: 42px; margin-bottom: 12px; animation: pulse 1.2s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { transform: scale(1); opacity: .8; } 50% { transform: scale(1.15); opacity: 1; } }
   #loading .sub { color: rgba(255,255,255,.5); font-size: 12px; margin-top: 8px; letter-spacing: 1px; }
+
+  /* ===== 玩法说明弹窗（DOM 模态：自适应窗口 + 内容纵向滚动） ===== */
+  #help-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(5,8,14,0.72);
+    font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
+  }
+  #help-panel {
+    display: flex; flex-direction: column;
+    width: 660px; max-width: 94vw; max-height: 90vh;
+    background: #1d2637; border: 2px solid #3d4f75; border-radius: 14px;
+    color: #dfe8f8; box-shadow: 0 12px 44px rgba(0,0,0,.55);
+    overflow: hidden;
+  }
+  #help-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px 10px; border-bottom: 1px solid rgba(61,79,117,.6);
+    flex-shrink: 0;
+  }
+  #help-head .t { font-size: 17px; font-weight: bold; color: #f5d76e; letter-spacing: 3px; }
+  #help-close {
+    width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+    background: #2c3a56; border: 1.5px solid #3d4f75; color: #cfd8e8;
+    font-size: 14px; line-height: 1; padding: 0; flex-shrink: 0;
+  }
+  #help-close:active { background: #3a465e; }
+  #help-scroll {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: 14px 16px 18px; touch-action: pan-y;
+    overscroll-behavior: contain;
+  }
+  #help-scroll::-webkit-scrollbar { width: 8px; }
+  #help-scroll::-webkit-scrollbar-thumb { background: #3d4f75; border-radius: 4px; }
+  #help-scroll::-webkit-scrollbar-track { background: transparent; }
+  .help-sec { margin-bottom: 18px; }
+  .help-sec h3 {
+    margin: 0 0 10px; font-size: 15px; color: #f5d76e; font-weight: bold;
+    border-left: 3px solid #3f7fd4; padding-left: 8px;
+  }
+  .help-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px; }
+  .help-step {
+    flex: 1 1 130px; min-width: 130px; box-sizing: border-box;
+    background: #26324a; border: 1px solid #3d4f75; border-radius: 10px;
+    padding: 9px 11px;
+  }
+  .help-step .n { font-size: 11px; color: #7fa5e0; font-weight: bold; letter-spacing: 1px; }
+  .help-step .s { font-size: 13.5px; font-weight: bold; color: #eaf1ff; margin: 2px 0 4px; }
+  .help-step .d { font-size: 12px; color: rgba(223,232,248,.78); line-height: 1.55; }
+  .help-arrow { align-self: center; color: #f5d76e; font-size: 16px; flex-shrink: 0; }
+  .help-item {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+    background: #26324a; border: 1px solid #3d4f75; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px;
+  }
+  .help-item .pic { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+  .help-item .pic canvas { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+  .help-item .tx { flex: 1 1 200px; min-width: 200px; font-size: 12.5px; color: rgba(223,232,248,.86); line-height: 1.65; }
+  .help-item .tx b { color: #f5d76e; font-weight: bold; }
+  .help-rules { font-size: 13px; color: rgba(223,232,248,.88); line-height: 1.7; }
+  .help-rules p { margin: 0 0 6px; }
+  .help-rules ul { margin: 2px 0 0; padding-left: 18px; }
+  .help-rules li { margin-bottom: 5px; }
+  .help-rules b { color: #f5d76e; }
+  #help-foot { flex-shrink: 0; padding: 12px 16px 16px; text-align: center; border-top: 1px solid rgba(61,79,117,.6); }
+  #help-gotit {
+    padding: 9px 36px; border-radius: 20px; border: none; cursor: pointer;
+    background: #3f7fd4; color: #fff; font-size: 14px; letter-spacing: 4px;
+  }
+  #help-gotit:active { background: #2c5588; }
 </style>
 </head>
 <body>
@@ -1481,7 +1551,23 @@ var Home = {
     mkMesh(btnTex('+', zbb, zbb, { bg: '#3a465e', fg: '#dfe8f8', border: '#4a5874', key: 'zi' }), zbb, zbb, zxR, zy, 2);
     addClickable('home:zoomIn', zxR, zy, zbb, zbb, 2);
 
-    mkTextMesh('规则：轮流行动 · 拿宝石 / 买牌 / 保留 · 先达 15 分并完成本轮者胜', 0, hasS ? H / 2 - H * 0.93 : H / 2 - H * 0.85, Math.min(13, W * 0.032), 'rgba(255,255,255,0.55)', { key: 'rules', bold: false });
+    // 底部规则文本：左侧加圆形感叹号「玩法说明」按钮，文本+按钮整体居中；
+    // 窄屏时文本字号自动收缩，保证「按钮+文本」一行放得下（不溢出/不出屏）
+    var rulesStr = '规则：轮流行动 · 拿宝石 / 买牌 / 保留 · 先达 15 分并完成本轮者胜';
+    var rlen = rulesStr.length;
+    var rfs = Math.min(13, W * 0.032);
+    var hd = Math.min(30, W * 0.08);        // 感叹号按钮直径
+    var hgap = 5;                           // 按钮紧贴文本左侧，间距 5px
+    var rAvail = W - 2 * 8 - hd - hgap;     // 文本可用宽度（两侧各留 8px 安全边距）
+    rfs = Math.min(rfs, rAvail / ((rlen + 1) * 1.1));
+    var rtw = (rlen * rfs + rfs) * 1.1;     // 文本宽（与 mkTextMesh 尺寸公式一致）
+    // 组合体（按钮+间距+文本）总宽 = hd+hgap+rtw，绕原点对称居中：
+    var rx = (hd + hgap) / 2;               // 文本中心（右移）
+    var hx = -(rtw + hgap) / 2;             // 按钮中心（左移）
+    var rulesY = hasS ? H / 2 - H * 0.93 : H / 2 - H * 0.85;
+    mkTextMesh(rulesStr, rx, rulesY, rfs, 'rgba(255,255,255,0.55)', { key: 'rules', bold: false });
+    mkMesh(helpBtnTex(hd), hd, hd, hx, rulesY, 2);
+    addClickable('home:help', hx, rulesY, hd, hd, 2);
     this.refresh();
   },
   refresh: function () {
@@ -1508,6 +1594,7 @@ var Home = {
       return;
     }
     if (key === 'home:start') { playSfx('start'); startGame(Home.players); }
+    if (key === 'home:help') { playSfx('tap'); HelpModal.open(); }
     if (key === 'home:load') {
       playSfx('start');
       if (!loadGame()) { playSfx('err'); rebuildScreen(); }   // 无有效存档：刷新首页使按钮消失
@@ -1569,6 +1656,456 @@ var PauseModal = {
       else playSfx('err');
     }
     else if (key === 'pause:home') { playSfx('tap'); this.close(); goHome(); }
+  },
+};
+
+// ============================================================
+// 玩法说明弹窗（DOM 模态：自适应窗口尺寸 + 内容纵向滚动）
+// 展示：一、游玩流程；二、棋盘元素图解（复用游戏绘制函数实际画出来 + 文本）；
+// 三、详细规则。点击遮罩 / ✕ / 「知道了」关闭。
+// ============================================================
+
+// 圆形感叹号按钮纹理（首页底部规则文本左侧）
+function helpBtnTex(d) {
+  return makeTex('helpbtn', d, d, function (ctx, w, h) {
+    var g = ctx.createRadialGradient(w * 0.35, h * 0.32, w * 0.08, w / 2, h / 2, w / 2);
+    g.addColorStop(0, '#5a76a8');
+    g.addColorStop(1, '#2c3a56');
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 1, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#3d4f75';
+    ctx.stroke();
+    text(ctx, '!', w / 2, h / 2 + 0.5, w * 0.6, '#f5d76e', 'center');
+  });
+}
+
+// 弹窗插图 canvas：内部按 DPR 放大绘制，CSS 尺寸自适应（等比缩放）
+function helpCanvas(fn, w, h) {
+  var cv = document.createElement('canvas');
+  var s = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.max(2, Math.round(w * s));
+  cv.height = Math.max(2, Math.round(h * s));
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  var ctx = cv.getContext('2d');
+  ctx.scale(s, s);
+  fn(ctx, w, h);
+  return cv;
+}
+
+// 插画：6 种宝石筹码 + 黄金（与游戏银行区同款样式）
+function helpGemRow() {
+  return helpCanvas(function (ctx, w, h) {
+    var r = h * 0.3;
+    var keys = ['W', 'B', 'G', 'R', 'K'];
+    var names = ['钻石', '蓝宝石', '祖母绿', '红宝石', '黑曜石'];
+    var step = r * 2 + 4;
+    var total = keys.length * step + step;
+    var x0 = (w - total) / 2 + r;
+    var cy = h * 0.36;
+    keys.forEach(function (k, i) {
+      var info = COLOR_INFO[k];
+      drawGemChip(ctx, x0 + i * step, cy, r, info.gem, info.gemDark, info.stroke);
+      text(ctx, names[i], x0 + i * step, cy + r + 8, 11, 'rgba(223,232,248,0.9)', 'center');
+    });
+    var gx = x0 + keys.length * step;
+    drawGemChip(ctx, gx, cy, r, GOLD_INFO.gem, GOLD_INFO.gemDark, GOLD_INFO.stroke);
+    text(ctx, '黄金', gx, cy + r + 8, 11, 'rgba(245,215,110,0.95)', 'center');
+  }, 380, 62);
+}
+
+// 插画：发展卡牌面（与游戏 cardTex 同款视觉：色渐变底 + 左上分 + 左下成本筹码）
+function helpCardFace(ctx, W, H, card) {
+  var info = COLOR_INFO[card.provide];
+  var bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, info.c1);
+  bg.addColorStop(1, info.c2);
+  ctx.fillStyle = bg;
+  rr(ctx, 0, 0, W, H, Math.min(8, W * 0.12));
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  rr(ctx, 1, 1, W - 2, H - 2, Math.min(7, W * 0.11));
+  ctx.stroke();
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  drawGemChip(ctx, W * 0.68, H * 0.4, H * 0.2, info.gem, info.gemDark, info.stroke);
+  ctx.restore();
+  if (card.points > 0) {
+    text(ctx, '' + card.points, W * 0.16, H * 0.15, Math.max(15, W * 0.4), '#ffd94d', 'center', true, 'rgba(90,60,0,0.65)');
+  }
+  var items = [];
+  for (var c = 0; c < 5; c++) if (card.cost[c] > 0) items.push(c);
+  var cr = Math.min(W * 0.15, H * 0.105);
+  var padB = H * 0.07, padL = W * 0.08;
+  items.forEach(function (ci, idx) {
+    var col = idx % 2, row = Math.floor(idx / 2);
+    var cx = padL + cr + col * (cr * 2 + W * 0.05);
+    var cy = H - padB - cr - row * (cr * 2 + H * 0.045);
+    var cinfo = COLOR_INFO[COLORS[ci]];
+    drawGemChip(ctx, cx, cy, cr, cinfo.gem, cinfo.gemDark, cinfo.stroke);
+    text(ctx, '' + card.cost[ci], cx, cy + 0.5, cr * 1.05, cinfo.onChip, 'center', true, cinfo.onChip === '#ffffff' ? 'rgba(0,0,0,0.35)' : null);
+  });
+}
+function helpDevCard() {
+  return helpCanvas(function (ctx, w, h) {
+    var cw = w * 0.62, ch = h * 0.82;
+    ctx.save();
+    ctx.translate((w - cw) / 2, (h - ch) / 2);
+    helpCardFace(ctx, cw, ch, { points: 1, provide: 'W', cost: [0, 1, 0, 2, 1], tier: 1 });
+    ctx.restore();
+  }, 150, 196);
+}
+
+// 插画：贵族卡牌面（与游戏 nobleTex 同款视觉：米白底 + 需求方块 + 3 分）
+function helpNobleFace(ctx, W, H, req) {
+  var bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#fdfdf7');
+  bg.addColorStop(1, '#f2ead6');
+  ctx.fillStyle = bg;
+  rr(ctx, 0, 0, W, H, Math.min(8, W * 0.12));
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#c8bfa8';
+  rr(ctx, 1, 1, W - 2, H - 2, Math.min(7, W * 0.11));
+  ctx.stroke();
+  var items = [];
+  for (var c = 0; c < 5; c++) if (req[c] > 0) items.push(c);
+  var sgap = 3;
+  var ss = Math.min(W * 0.28, (H - 2 * sgap) / 3);
+  var totalH = items.length * ss + (items.length - 1) * sgap;
+  var y0 = (H - totalH) / 2;
+  items.forEach(function (ci, idx) {
+    var cinfo = COLOR_INFO[COLORS[ci]];
+    var x = W * 0.09, y = y0 + idx * (ss + sgap);
+    var g2 = ctx.createLinearGradient(0, y, 0, y + ss);
+    g2.addColorStop(0, cinfo.gem);
+    g2.addColorStop(1, cinfo.gemDark);
+    ctx.fillStyle = g2;
+    rr(ctx, x, y, ss, ss, ss * 0.22);
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = cinfo.stroke;
+    rr(ctx, x + 0.5, y + 0.5, ss - 1, ss - 1, ss * 0.2);
+    ctx.stroke();
+    text(ctx, '' + req[ci], x + ss / 2, y + ss / 2 + 0.5, ss * 0.52, cinfo.onChip, 'center', true, cinfo.onChip === '#ffffff' ? 'rgba(0,0,0,0.3)' : null);
+  });
+  text(ctx, '3', W * 0.74, H * 0.74, Math.max(14, W * 0.42), '#f2c93c', 'center', true, 'rgba(120,90,10,0.5)');
+}
+function helpNobleCard() {
+  return helpCanvas(function (ctx, w, h) {
+    var cw = w * 0.8, ch = h * 0.8;   // 正方形卡面
+    ctx.save();
+    ctx.translate((w - cw) / 2, (h - ch) / 2);
+    helpNobleFace(ctx, cw, ch, [4, 0, 0, 0, 4]);   // 需求：4 白 + 4 黑
+    ctx.restore();
+  }, 190, 190);
+}
+
+// 插画：三级牌堆（牌背叠放，与游戏 cardBackTex 同款视觉）
+function helpDeck() {
+  return helpCanvas(function (ctx, w, h) {
+    var colors = { 1: '#7fae5e', 2: '#5e8fae', 3: '#9a6fc0' };
+    var cw = w * 0.22, ch = h * 0.72;
+    [1, 2, 3].forEach(function (tier, i) {
+      var x = w / 2 - cw / 2 + (i - 1) * cw * 0.32;
+      var y = h * 0.1 + i * 2.5;
+      ctx.fillStyle = colors[tier];
+      rr(ctx, x, y, cw, ch, Math.min(7, cw * 0.1));
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      rr(ctx, x + 2, y + 2, cw - 4, ch - 4, Math.min(6, cw * 0.09));
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(x + cw / 2, y + ch / 2);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillRect(-cw * 0.16, -cw * 0.16, cw * 0.32, cw * 0.32);
+      ctx.restore();
+      text(ctx, tier === 1 ? 'I' : tier === 2 ? 'II' : 'III', x + cw / 2, y + ch / 2, Math.max(11, cw * 0.3), 'rgba(255,255,255,0.9)', 'center');
+    });
+    text(ctx, '一级 · 二级 · 三级', w / 2, h - 5, 12, 'rgba(223,232,248,0.85)', 'center');
+  }, 300, 100);
+}
+
+// 插画：玩家面板（一）—— 与游戏面板同款：菱形计分 + 资源槽（卡数/宝石数）+ 黄金圆
+function helpPanelMain() {
+  return helpCanvas(function (ctx, w, h) {
+    var midY = h * 0.52;
+    var pad = Math.max(5, h * 0.07);
+    // 底板：灰色渐变圆角条（同 drawPanelContent）
+    var bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, 'rgba(148,152,162,0.66)');
+    bg.addColorStop(1, 'rgba(104,108,120,0.66)');
+    ctx.fillStyle = bg;
+    rr(ctx, 1, 1, w - 2, h - 2, Math.min(10, h * 0.24));
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+    rr(ctx, 1.5, 1.5, w - 3, h - 3, Math.min(9, h * 0.22));
+    ctx.stroke();
+    ctx.fillStyle = '#5e8fae';
+    ctx.globalAlpha = 0.9;
+    rr(ctx, 6, h - 4.5, w - 12, 2.5, 1.2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // 1) 计分：四边菱形（金色渐变圆角方块旋转 45°）+ 中间白色分数
+    var db = h * 0.21;
+    var bcx = pad + db * 0.95, bcy = h * 0.36;
+    ctx.save();
+    ctx.translate(bcx, bcy);
+    ctx.rotate(Math.PI / 4);
+    var dg = ctx.createLinearGradient(-db, -db, db, db);
+    dg.addColorStop(0, '#f7b733');
+    dg.addColorStop(1, '#c26e00');
+    ctx.fillStyle = dg;
+    var ds = db * 0.78;
+    rr(ctx, -ds, -ds, ds * 2, ds * 2, ds * 0.3);
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#8f5a00';
+    rr(ctx, -ds, -ds, ds * 2, ds * 2, ds * 0.3);
+    ctx.stroke();
+    ctx.restore();
+    text(ctx, '12', bcx, bcy + 1, db * 0.8, '#ffffff', 'center', true, 'rgba(0,0,0,0.35)');
+
+    // 2) 资源圆：手上宝石+黄金总数 / 上限 10（同 drawPanelContent：灰圆 + 金色斜线）
+    var scr = Math.min(h * 0.18, 18);
+    var ccx = bcx + db * 0.9 + scr + 5, ccy = midY;
+    ctx.beginPath();
+    ctx.arc(ccx, ccy, scr, 0, Math.PI * 2);
+    ctx.fillStyle = '#e9ebee';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#9aa0a8';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ccx - scr * 0.62, ccy + scr * 0.62);
+    ctx.lineTo(ccx + scr * 0.62, ccy - scr * 0.62);
+    ctx.strokeStyle = '#c9a227';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    text(ctx, '7', ccx - scr * 0.32, ccy - scr * 0.32, scr * 0.64, '#3c4048', 'center');
+    text(ctx, '10', ccx + scr * 0.38, ccy + scr * 0.38, scr * 0.48, '#8a6d1d', 'center');
+
+    // 3) 5 色资源槽：色渐变矩形（大数 = 发展卡数）+ 右下白色椭圆（宝石数）
+    var cardsN = [1, 1, 1, 1, 1], gemsN = [1, 2, 1, 0, 1];
+    var x0 = ccx + scr + 8;
+    var xEnd = w - pad - 4;
+    var ss = Math.min(h * 0.34, (xEnd - x0 - 16 - 8) / 5.7);
+    ss = Math.max(14, ss);
+    var sgap = ss * 0.14;
+    for (var i = 0; i < 5; i++) {
+      var c = COLORS[i], info = COLOR_INFO[c];
+      var sx0 = x0 + i * (ss + sgap);
+      var scx = sx0 + ss / 2;
+      var sg = ctx.createLinearGradient(0, midY - ss / 2, 0, midY + ss / 2);
+      sg.addColorStop(0, info.gem);
+      sg.addColorStop(1, info.gemDark);
+      ctx.fillStyle = sg;
+      rr(ctx, sx0, midY - ss / 2, ss, ss, ss * 0.22);
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = info.stroke;
+      rr(ctx, sx0 + 0.5, midY - ss / 2 + 0.5, ss - 1, ss - 1, ss * 0.2);
+      ctx.stroke();
+      text(ctx, '' + cardsN[i], scx - ss * 0.08, midY - ss * 0.12, ss * 0.44, info.onChip, 'center', true, info.onChip === '#ffffff' ? 'rgba(0,0,0,0.3)' : null);
+      // 宝石数角标（右下白色椭圆）
+      var ow = ss * 0.58, oh = ss * 0.38;
+      var ocx = scx + ss * 0.3, ocy = midY + ss * 0.34;
+      ctx.beginPath();
+      ctx.ellipse(ocx, ocy, ow / 2, oh / 2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#f4f5f7';
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.stroke();
+      text(ctx, '' + gemsN[i], ocx, ocy + 0.5, oh * 0.62, '#3c4048', 'center');
+    }
+
+    // 4) 黄金：圆形筹码 + 数字
+    var gr = Math.min(h * 0.18, 13);
+    var gcx = x0 + 5 * (ss + sgap) + gr + 2;
+    drawGemChip(ctx, gcx, midY, gr, GOLD_INFO.gem, GOLD_INFO.gemDark, GOLD_INFO.stroke);
+    text(ctx, '2', gcx, midY + 0.5, gr * 0.95, GOLD_INFO.onChip, 'center');
+
+    // 底部说明（浅灰底上用深色字）
+    text(ctx, '菱形=分数 · 7/10=手上资源 · 色块=发展卡/椭圆=宝石 · 金圆=黄金', w / 2, h - 12, 11, 'rgba(153,217,234,0.88)', 'center');
+  }, 380, 104);
+}
+
+// 插画：玩家面板（二）—— 保留区（最多 3 张叠放）
+function helpReserve() {
+  return helpCanvas(function (ctx, w, h) {
+    ctx.fillStyle = 'rgba(28,34,46,0.95)';
+    rr(ctx, 0, 0, w, h, 10);
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#3d4f75';
+    rr(ctx, 1, 1, w - 2, h - 2, 9);
+    ctx.stroke();
+    // 3 张彩色小卡叠放（第 2 张最新，最右完整可见）
+    var cw = 62, ch = 50, y0 = 21, x0 = 20;
+    for (var j = 2; j >= 0; j--) {
+      var x = x0 + j * cw * 0.4;
+      var info2 = COLOR_INFO[['W', 'B', 'G'][j]];
+      var bg = ctx.createLinearGradient(0, y0, 0, y0 + ch);
+      bg.addColorStop(0, info2.c1);
+      bg.addColorStop(1, info2.c2);
+      ctx.fillStyle = bg;
+      rr(ctx, x, y0, cw, ch, 5);
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      rr(ctx, x + 0.5, y0 + 0.5, cw - 1, ch - 1, 4.5);
+      ctx.stroke();
+      // 牌面示意：左上小分 + 中下筹码
+      text(ctx, '' + (j + 1), x + 10, y0 + 12, 13, '#ffd94d', 'center', true, 'rgba(90,60,0,0.5)');
+      drawGemChip(ctx, x + 15, y0 + ch - 14, 6.5, info2.gem, info2.gemDark, info2.stroke);
+    }
+    // 右侧说明
+    text(ctx, '保留区（最多 3 张）', 150, 36, 12, 'rgba(245,215,110,0.95)', 'left', true);
+    text(ctx, '保留时获得 1 个黄金', 150, 58, 10.5, 'rgba(223,232,248,0.85)', 'left');
+    text(ctx, '保留牌只有自己可购买', 150, 74, 10.5, 'rgba(223,232,248,0.85)', 'left');
+  }, 340, 92);
+}
+
+// 插画：行动按钮（拿3色 / 拿2个 / 购买 / 保留 + 执行）
+function helpActions() {
+  return helpCanvas(function (ctx, w, h) {
+    var labels = ['拿3色', '拿2个', '购买', '保留'];
+    var bw = w * 0.205, bh = h * 0.36, gap = w * 0.03;
+    var total = bw * 4 + gap * 3;
+    var x0 = (w - total) / 2;
+    labels.forEach(function (lb, i) {
+      var x = x0 + i * (bw + gap);
+      ctx.fillStyle = '#2c3a56';
+      rr(ctx, x, h * 0.08, bw, bh, Math.min(10, bh * 0.28));
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#3d4f75';
+      rr(ctx, x + 1.5, h * 0.08 + 1.5, bw - 3, bh - 3, Math.min(9, bh * 0.26));
+      ctx.stroke();
+      text(ctx, lb, x + bw / 2, h * 0.08 + bh / 2, Math.min(bh * 0.36, (bw * 0.94) / 3), '#dfe8f8', 'center');
+    });
+    var exw = w * 0.24, exh = bh;
+    var exx = w / 2 - exw / 2;
+    var exy = h * 0.54;
+    ctx.fillStyle = '#3f7fd4';
+    rr(ctx, exx, exy, exw, exh, Math.min(10, exh * 0.28));
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#2c5588';
+    rr(ctx, exx + 1.5, exy + 1.5, exw - 3, exh - 3, Math.min(9, exh * 0.26));
+    ctx.stroke();
+    text(ctx, '执行 ▶', exx + exw / 2, exy + exh / 2, Math.min(exh * 0.36, (exw * 0.94) / 5), '#fff', 'center');
+    text(ctx, '行动按钮：选好后点「执行」结束回合', w / 2, h - 6, 11, 'rgba(223,232,248,0.85)', 'center');
+  }, 340, 112);
+}
+
+var HelpModal = {
+  el: null,
+  _keyHandler: null,
+  open: function () {
+    if (this.el) return;
+    var ov = document.createElement('div');
+    ov.id = 'help-overlay';
+
+    // ---- 一、游玩流程 ----
+    var steps = [
+      ['STEP 1', '开始', '选择 2~4 人，点击「开始游戏」；随机决定先手，开局无任何资源'],
+      ['STEP 2', '回合循环', '从先手开始顺时针轮流，每人每回合执行 1 个行动，轮完一圈为 1 轮'],
+      ['STEP 3', '行动', '每回合四选一：拿宝石 / 买发展卡 / 保留，选好后点「执行」结束回合'],
+      ['STEP 4', '胜利', '先达 15 分触发终局，其余玩家完成本轮后按分数结算；同分比发展卡数量'],
+    ];
+    var flowHtml = '';
+    steps.forEach(function (s, i) {
+      if (i > 0) flowHtml += '<div class="help-arrow">➜</div>';
+      flowHtml += '<div class="help-step"><div class="n">' + s[0] + '</div><div class="s">' + s[1] + '</div><div class="d">' + s[2] + '</div></div>';
+    });
+
+    // ---- 二、棋盘元素图解 ----
+    var items = [
+      {
+        pic: helpGemRow(),
+        tx: '<b>宝石筹码</b>：银行区 5 色宝石 + 黄金。宝石用于购买发展卡；<b>黄金是万能宝石</b>，只能通过「保留」获得。'
+      },
+      {
+        pic: helpDevCard(),
+        tx: '<b>发展卡</b>：市场每级 4 张（共 3 级）。左上角是<b>分数</b>；左下是<b>购买成本</b>；牌面色条表示买下后永久提供 1 个该色资源（后续购买自动抵扣）。'
+      },
+      {
+        pic: helpNobleCard(),
+        tx: '<b>贵族卡</b>：每局 3~5 张。拥有的资源满足其需求时<b>自动拜访</b>（同时满足多位则手动选 1 张），每张 +3 分。'
+      },
+      {
+        pic: helpDeck(),
+        tx: '<b>牌堆</b>：每级一叠。展示位被买走/保留后自动补 1 张；牌堆耗尽则留空。也可以「盲保留」牌堆顶的未知牌。'
+      },
+      {
+        pic: helpPanelMain(),
+        tx: '<b>玩家面板</b>：<b>菱形</b> = 分数；<b>圆 A/10</b> = 手上资源总数（上限 10）；<b>色块</b> = 发展卡数、右下<b>椭圆</b> = 宝石数；<b>金色圆</b> = 黄金数。已购发展卡 = 永久资源，购买时自动抵扣成本。'
+      },
+      {
+        pic: helpReserve(),
+        tx: '<b>保留区</b>：最多保留 3 张；保留时获得 1 个黄金，保留牌只有自己可购买。'
+      },
+      {
+        pic: helpActions(),
+        tx: '<b>行动按钮</b>：回合开始后从「拿3色 / 拿2个 / 购买 / 保留」中选 1 种，选好目标后点「执行」结束回合。'
+      },
+    ];
+    var itemsHtml = '';
+    items.forEach(function (it) {
+      itemsHtml += '<div class="help-item"><div class="pic"></div><div class="tx">' + it.tx + '</div></div>';
+    });
+
+    // ---- 三、详细规则 ----
+    var rulesHtml =
+      '<p><b>拿宝石</b>：选 3 种不同颜色各拿 1 个；或同色拿 2 个（该色银行至少 4 个）。' +
+      '手中宝石 + 黄金总数最多 <b>10 个</b>，拿取时自动受剩余空间限制。</p>' +
+      '<p><b>购买</b>：支付牌面成本；对应颜色宝石不足时，黄金按 1:1 自动补差。' +
+      '买下的发展卡提供永久资源与分数。</p>' +
+      '<p><b>保留</b>：从展示区（或牌堆顶盲取）拿 1 张牌，并得 1 个黄金；每人最多保留 3 张，保留牌只有自己可购买。</p>' +
+      '<p><b>贵族</b>：回合结束自动结算；同时满足多位贵族时手动选择 1 张。</p>' +
+      '<p><b>黄金</b>：万能宝石，支付时代替任意颜色；不参与「拿宝石」。</p>' +
+      '<p><b>终局</b>：某玩家达 15 分后其余玩家完成同一轮，回到触发者时结束；同分比发展卡数量，再同则并列获胜。</p>';
+
+    ov.innerHTML =
+      '<div id="help-panel">' +
+        '<div id="help-head"><span class="t">玩法说明</span><button id="help-close" type="button" aria-label="关闭">✕</button></div>' +
+        '<div id="help-scroll">' +
+          '<div class="help-sec"><h3>一、游玩流程</h3><div class="help-flow">' + flowHtml + '</div></div>' +
+          '<div class="help-sec"><h3>二、棋盘元素</h3>' + itemsHtml + '</div>' +
+          '<div class="help-sec"><h3>三、详细规则</h3><div class="help-rules">' + rulesHtml + '</div></div>' +
+        '</div>' +
+        '<div id="help-foot"><button id="help-gotit" type="button">知道了</button></div>' +
+      '</div>';
+
+    // 插图 canvas 挂到对应占位
+    var pics = ov.querySelectorAll('.help-item .pic');
+    items.forEach(function (it, i) { if (pics[i]) pics[i].appendChild(it.pic); });
+
+    // 关闭交互：✕ / 知道了 / 点击遮罩空白处 / Esc
+    var self = this;
+    var close = function () { self.close(); };
+    ov.querySelector('#help-close').addEventListener('click', close);
+    ov.querySelector('#help-gotit').addEventListener('click', close);
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    this._keyHandler = function (e) { if (e.key === 'Escape' || e.key === 'Esc') close(); };
+    document.addEventListener('keydown', this._keyHandler);
+
+    this.el = ov;
+    document.body.appendChild(ov);
+  },
+  close: function () {
+    if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null; }
+    if (this.el) { this.el.remove(); this.el = null; }
   },
 };
 
