@@ -938,21 +938,6 @@ function cardBackTex(tier, w, h) {
   });
 }
 
-// 牌堆标签纹理（设计图：浅色圆角标签「三级卡 / xN」，数量由独立文字 mesh 动态更新）
-function deckLabelTex(tier, w, h) {
-  var name = tier === 1 ? '一级卡' : tier === 2 ? '二级卡' : '三级卡';
-  return makeTex('decklabel' + tier, w, h, function (ctx, W, H) {
-    ctx.fillStyle = 'rgba(236,234,242,0.92)';
-    rr(ctx, 0, H * 0.08, W, H * 0.84, 6);
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(120,116,140,0.6)';
-    rr(ctx, 1, H * 0.08 + 1, W - 2, H * 0.84 - 2, 5);
-    ctx.stroke();
-    text(ctx, name, W / 2, H * 0.34, Math.max(9, W * 0.21), '#4a4a58', 'center');
-  });
-}
-
 // 按钮纹理
 function btnTex(label, w, h, style) {
   style = style || {};
@@ -1225,7 +1210,7 @@ function computeLayout() {
   // 横屏卡高上限 100（原 120）：为回合横幅在操作栏上方留出空间，使市场内容可整体居中且不与横幅重叠
   cardH = Math.max(46, Math.min(cardH, portrait ? 88 : 100));
   var cardW = Math.round(cardH / 1.42);
-  var labelW = Math.round(cardW * 0.6);
+  var labelW = cardW;   // 牌堆矩形：与发展卡同宽同高（1-3 级用不同颜色的卡背 + 图形标识）
   var gemSize = Math.round(cardH * 0.5);   // 宝石筹码直径：与发展卡统一比例（50%，原为独立预算推导）
   var nt = n + 1;
   // 贵族卡与宝石/发展卡统一缩放比例：始终为发展卡高度的 60%（等比缩小 40%），
@@ -1251,11 +1236,11 @@ function computeLayout() {
   }
 
   // 水平预算不足时整体等比收缩（循环迭代到收敛，避免触及下限后仍超宽）
-  while (totalW > availW && (cardW > 24 || labelW > 30 || gemSize > 18 || nobleW > 22)) {
+  while (totalW > availW && (cardW > 24 || gemSize > 18 || nobleW > 22)) {
     var k = availW / totalW;
     cardW = Math.max(24, Math.floor(cardW * k));
     cardH = Math.round(cardW * 1.42);
-    labelW = Math.max(30, Math.round(labelW * k));
+    labelW = cardW;   // 牌堆矩形始终与发展卡同宽（随卡同步收缩）
     gemSize = Math.max(18, Math.round(cardH * 0.5));   // 与发展卡统一比例（下限 18）
     nobleW = Math.max(22, Math.round(cardH * 0.6));   // 与发展卡统一比例（下限 22，保持可读）
     nobleH = nobleW;   // 保持正方形（高度 = 宽度）
@@ -2127,7 +2112,6 @@ var GameScreen = {
   gemPiles: {},
   cardMeshes: {},
   deckLabelNums: {},
-  deckMeshes: {},
   nobleMeshes: {},
   panelMeshes: {},
   bannerMesh: null,
@@ -2139,7 +2123,7 @@ var GameScreen = {
     var L = this.L = computeLayout();
     var g = G.game;
     this.gemPiles = {}; this.cardMeshes = {}; this.deckLabelNums = {};
-    this.deckMeshes = {}; this.nobleMeshes = {}; this.panelMeshes = {}; this.resvSpots = {};
+    this.nobleMeshes = {}; this.panelMeshes = {}; this.resvSpots = {};
 
     var bg = makeTex('gbg', L.W, L.H, function (ctx, w, h) {
       var grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -2167,17 +2151,16 @@ var GameScreen = {
       addClickable('noble:' + i, L.nobles.x, ny, L.nobles.w, L.nobles.h, 2);
     }
 
-    // 牌区 + 牌堆标签列
+    // 牌区 + 牌堆列（牌堆矩形 = 与发展卡同尺寸的卡背：1-3 级不同颜色 + 罗马数字图形，数量 xN 在卡背下方）
     this.deckLabelNums = {};
     for (var t = 1; t <= 3; t++) {
       var lb = L.deckLabels[t];
-      mkMesh(deckLabelTex(t, lb.w, lb.h), lb.w, lb.h, lb.x, lb.y, 1.6);
-      this.deckLabelNums[t] = mkTextMesh('', lb.x, lb.y - lb.h * 0.16, Math.max(9, lb.w * 0.24), '#5a5a68', { key: 'dl' + t });
+      mkMesh(cardBackTex(t, lb.w, lb.h), lb.w, lb.h, lb.x, lb.y, 1.6);
+      this.deckLabelNums[t] = mkTextMesh('', lb.x, lb.y + lb.h * 0.18, Math.max(9, lb.w * 0.22), '#ffffff', { key: 'dl' + t, stroke: 'rgba(0,0,0,0.55)' });
+      addClickable('deck:' + t, lb.x, lb.y, lb.w, lb.h, 1.6);   // 保留模式：点击牌堆盲取 1 张
       for (var c = 0; c < 4; c++) {
         var x = L.cards[t].xs[c], y = L.cards[t].rowY;
         var card = tableCards(g, t, c);
-        var back = mkMesh(cardBackTex(t, L.cards[t].w, L.cards[t].h), L.cards[t].w, L.cards[t].h, x, y + 5, 1.8);
-        this.deckMeshes[t + ':' + c] = back;
         this.cardMeshes[t + ':' + c] = card ? mkMesh(cardTex(card, L.cards[t].w, L.cards[t].h), L.cards[t].w, L.cards[t].h, x, y, 2) : null;
         addClickable('card:' + t + ':' + c, x, y, L.cards[t].w, L.cards[t].h, 2);
       }
@@ -2304,11 +2287,11 @@ var GameScreen = {
       if (pile) updateTextMesh(pile.num, '' + n, L.gems.x, L.gems.ys[i] + L.gems.size * 0.02, Math.max(9, L.gems.size * 0.34), '#fff', { key: 'n' + k, stroke: 'rgba(0,0,0,0.55)' });
     }
 
-    // 牌区 + 牌堆标签计数
+    // 牌区 + 牌堆计数（xN 在卡背内罗马数字下方，白色描边以适配彩色卡背）
     for (var t = 1; t <= 3; t++) {
       var tierCnt = g.draw[t].length; // 牌库剩余数（展示区 4 张另计）
       var lb = L.deckLabels[t];
-      updateTextMesh(this.deckLabelNums[t], 'x' + tierCnt, lb.x, lb.y - lb.h * 0.16, Math.max(9, lb.w * 0.24), '#5a5a68', { key: 'dl' + t });
+      updateTextMesh(this.deckLabelNums[t], 'x' + tierCnt, lb.x, lb.y + lb.h * 0.18, Math.max(9, lb.w * 0.22), '#ffffff', { key: 'dl' + t, stroke: 'rgba(0,0,0,0.55)' });
       for (var c = 0; c < 4; c++) {
         var card = tableCards(g, t, c);
         var key = t + ':' + c;
@@ -2325,9 +2308,6 @@ var GameScreen = {
           m.material.map = cardTex(card, L.cards[t].w, L.cards[t].h);
           m.material.needsUpdate = true;
         }
-        var back = this.deckMeshes[key];
-        // 背面仅在展示位有牌且牌库还有牌（可盲保留）时显示
-        if (back) back.visible = g.decks[t][c].length > 0 && g.draw[t].length > 0;
       }
     }
 
@@ -2392,7 +2372,7 @@ var GameScreen = {
       }
       case 'take2': return '请点选 1 个宝石堆，拿取 2 个（需 ≥4 个）';
       case 'buy': return selN ? '已选牌：按「执行」购买（黄金自动补差）' : '请点选要购买的牌（绿色边缘=可买，含面板上的保留牌）';
-      case 'reserve': return '请点选要保留的牌，同时获得 1 个黄金';
+      case 'reserve': return '请点选要保留的牌（或点选左侧牌堆盲取 1 张），同时获得 1 个黄金';
     }
     return '轮到你行动：请点选下方一种动作';
   },
@@ -2423,6 +2403,14 @@ var GameScreen = {
           setGlow('c' + t + c, sel2 ? 'blue' : 'green', x, y, w, h, 2.6);
         } else setGlow('c' + t + c, null);
       }
+    }
+    // 牌堆列：保留模式下数量 >0 的牌堆显示光圈（绿色可盲取、蓝色已选中）
+    for (var t3 = 1; t3 <= 3; t3++) {
+      var key3 = 'deck:' + t3;
+      var lb3 = L.deckLabels[t3];
+      if (UI.mode === 'reserve' && uiIsSelectable(g, key3)) {
+        setGlow('d' + t3, UI.selected.indexOf(key3) >= 0 ? 'blue' : 'green', lb3.x, lb3.y, lb3.w, lb3.h, 2.1);
+      } else setGlow('d' + t3, null);
     }
     // 面板内保留牌光圈：先全清，再按购买模式给当前玩家可买的牌加光圈
     var spots = this.resvSpots || {};
@@ -2539,7 +2527,7 @@ var GameScreen = {
       } else playSfx('err');
       return;
     }
-    if (key.indexOf('gem:') === 0 || key.indexOf('card:') === 0) {
+    if (key.indexOf('gem:') === 0 || key.indexOf('card:') === 0 || key.indexOf('deck:') === 0) {
       if (uiToggleSelect(g, key)) { playSfx('tap'); this.refresh(); }
       else playSfx('err');
     }
