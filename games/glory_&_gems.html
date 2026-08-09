@@ -804,8 +804,9 @@ function nobleTex(noble, w, h) {
     // 左列：需求方块（资源色渐变 + 数量）
     var items = [];
     for (var c = 0; c < 5; c++) if (noble.req[c] > 0) items.push(c);
-    var ss = Math.min(W * 0.3, (H * 0.74) / items.length - 3);
+    // 方块统一大小：≈卡宽 28%（2 项/3 项贵族卡一致），以卡高为硬上限保证 3 个方块不溢出
     var sgap = 3;
+    var ss = Math.min(W * 0.28, (H - 2 * sgap) / 3);
     var totalH = items.length * ss + (items.length - 1) * sgap;
     var y0 = (H - totalH) / 2;
     items.forEach(function (ci, idx) {
@@ -1017,15 +1018,15 @@ function setGlow(key, color, x, y, w, h, z, rot) {
     g = { mesh: mesh, phase: Math.random() * Math.PI * 2 };
     SceneRoot.glows.set(key, g);
   }
-  g.color = color;
   g.x = x; g.y = y; g.w = w + 12; g.h = h + 12;
   g.mesh.position.set(x, y, (z === undefined ? 1 : z) + 0.5);
   // 换旋转（布局位置随回合变化后，发光矩形同步）
   if (g.rot !== rot) { g.rot = rot; g.mesh.rotation.z = rot || 0; }
-  // 换颜色
+  // 换颜色（先比较旧值再赋值，已存在的发光才能从绿→蓝等切换）
   if (g.color !== color) {
     g.mesh.material.map = glowTex(w + 12, h + 12, color);
     g.mesh.material.needsUpdate = true;
+    g.color = color;
   }
 }
 // 每帧更新发光脉冲
@@ -1137,10 +1138,12 @@ function computeLayout() {
   cardH = Math.max(46, Math.min(cardH, portrait ? 88 : 100));
   var cardW = Math.round(cardH / 1.42);
   var labelW = Math.round(cardW * 0.6);
-  var gemSize = Math.min(portrait ? 39 : 51, Math.floor((mktH - 20) / 6));   // 宝石筹码直径（原 26/34，放大 50%）
+  var gemSize = Math.round(cardH * 0.5);   // 宝石筹码直径：与发展卡统一比例（50%，原为独立预算推导）
   var nt = n + 1;
-  var nobleH = Math.min(cardH, Math.floor((mktH - (nt - 1) * 5) / nt));
-  var nobleW = Math.round(nobleH / 1.42);
+  // 贵族卡与宝石/发展卡统一缩放比例：始终为发展卡高度的 60%（等比缩小 40%），
+  // 不单独用独立预算推导——市场整体自适应缩放时贵族卡与卡牌/宝石保持同一比例
+  var nobleH = Math.round(cardH * 0.6);
+  var nobleW = nobleH;   // 正方形：高度与宽度一致（原为高/1.42 的竖版）
 
   // 水平：默认舞台全宽、内容居中，卡牌位置与底部座位完全一致；
   // 仅当左/右座位两侧留白不足以容纳操作栏（28 间距 + barH 厚度 + 6 间隙）时才避让收缩
@@ -1165,9 +1168,9 @@ function computeLayout() {
     cardW = Math.max(24, Math.floor(cardW * k));
     cardH = Math.round(cardW * 1.42);
     labelW = Math.max(30, Math.round(labelW * k));
-    gemSize = Math.max(18, Math.round(gemSize * k));
-    nobleW = Math.max(22, Math.round(nobleW * k));
-    nobleH = Math.round(nobleW * 1.42);
+    gemSize = Math.max(18, Math.round(cardH * 0.5));   // 与发展卡统一比例（下限 18）
+    nobleW = Math.max(22, Math.round(cardH * 0.6));   // 与发展卡统一比例（下限 22，保持可读）
+    nobleH = nobleW;   // 保持正方形（高度 = 宽度）
     totalW = labelW + g1 + cardW * 4 + g1 * 3 + g1 * 2 + gemSize + g1 * 2 + nobleW;
   }
   var x0 = Math.max(mktL, mktL + (mktW - totalW) / 2);   // 市场左缘（窄屏时贴避让边界，不越过操作栏）
@@ -1808,8 +1811,11 @@ var GameScreen = {
       var gx = L.gems.x, gy = L.gems.ys[i], gs = L.gems.size;
       var sel = UI.selected.indexOf(key) >= 0;
       var canPickMore = UI.mode !== 'take3' || UI.selected.length < take3MaxPick(g, p);
-      if ((UI.mode === 'take3' || UI.mode === 'take2') && uiIsSelectable(g, key) && canPickMore) {
-        setGlow('g' + k, sel ? 'blue' : 'green', gx, gy, gs + 4, gs + 4, 2.6);
+      if (UI.mode === 'take3' || UI.mode === 'take2') {
+        // 已选中的宝石恒显示蓝色选中框（uiIsSelectable 对已选项返回 false，需优先于可选性判断）
+        if (sel) setGlow('g' + k, 'blue', gx, gy, gs + 4, gs + 4, 2.6);
+        else if (uiIsSelectable(g, key) && canPickMore) setGlow('g' + k, 'green', gx, gy, gs + 4, gs + 4, 2.6);
+        else setGlow('g' + k, null);
       } else setGlow('g' + k, null);
     }
     for (var t = 1; t <= 3; t++) {
