@@ -250,8 +250,10 @@ function newGame(nPlayers) {
     cfg: cfg,
     bank: { W: cfg.gemCount, B: cfg.gemCount, G: cfg.gemCount, R: cfg.gemCount, K: cfg.gemCount },
     gold: cfg.goldCount,
-    // 12 个牌堆：decks[1..3][col]，数组尾部为堆顶（最后一张是顶）
-    decks: { 1: [], 2: [], 3: [] },
+    // 展示区：decks[1..3][col]，每格 0~1 张（当前展示牌）
+    decks: { 1: [[], [], [], []], 2: [[], [], [], []], 3: [[], [], [], []] },
+    // 每级独立牌库：draw[t]，数组尾部为牌库顶（最后一张是顶）
+    draw: { 1: [], 2: [], 3: [] },
     nobles: [],
     players: [],
     current: 0,
@@ -265,16 +267,13 @@ function newGame(nPlayers) {
     log: [],              // 最近消息
   };
 
-  // 洗牌分组：每级均分 4 叠
+  // 洗牌：每级一个牌库，翻 4 张到展示区
   var byTier = { 1: [], 2: [], 3: [] };
   cloneCards(CARD_DEFS).forEach(function (c) { byTier[c.tier].push(c); });
   for (var t = 1; t <= 3; t++) {
-    var deck = shuffle(byTier[t]);
-    var per = Math.floor(deck.length / 4); // 10, 7, 5
-    g.decks[t] = [];
+    g.draw[t] = shuffle(byTier[t]); // 尾部为牌库顶
     for (var col = 0; col < 4; col++) {
-      var size = col < deck.length % 4 ? per + 1 : per;
-      g.decks[t][col] = deck.slice(col * per + Math.min(col, deck.length % 4), col * per + Math.min(col, deck.length % 4) + size);
+      if (g.draw[t].length) g.decks[t][col].push(g.draw[t].pop()); // 翻开 1 张到展示位
     }
   }
 
@@ -304,7 +303,7 @@ function newGame(nPlayers) {
 // ---------- 状态查询 ----------
 function tableCards(g, tier, col) {
   var d = g.decks[tier][col];
-  return d.length ? d[d.length - 1] : null; // 堆顶
+  return d.length ? d[d.length - 1] : null; // 展示位牌（每格最多 1 张）
 }
 function playerCardsCount(p) {
   var s = 0;
@@ -354,10 +353,12 @@ function canBuy(g, p) {
 }
 function canReserve(g, p) {
   if (g.gold <= 0 || p.reserved.length >= 3) return false;
-  // 桌上有展示牌或任何牌堆非空
-  for (var t = 1; t <= 3; t++)
+  // 牌库有牌（可盲保留）或展示区有牌（可保留展示牌）
+  for (var t = 1; t <= 3; t++) {
+    if (g.draw[t].length) return true;
     for (var col = 0; col < 4; col++)
       if (g.decks[t][col].length) return true;
+  }
   return false;
 }
 
@@ -374,8 +375,14 @@ function execTakeTwo(g, p, c) {
   p.gems[c] += 2;
   pushLog(g, p, '拿取 2 个' + COLOR_INFO[c].name);
 }
-function execReserve(g, p, tier, col) {
-  var card = g.decks[tier][col].pop();
+function execReserve(g, p, tier, col, fromDraw) {
+  var card;
+  if (fromDraw && g.draw[tier].length) {
+    card = g.draw[tier].pop();          // 盲保留：从牌库顶拿一张未知牌
+  } else {
+    card = g.decks[tier][col].pop();    // 保留展示牌
+    if (g.draw[tier].length) g.decks[tier][col].push(g.draw[tier].pop()); // 牌库补一张到展示位
+  }
   p.reserved.push({ card: card, src: 'deck' });
   g.gold--;
   p.gold++;
@@ -401,11 +408,15 @@ function execBuy(g, p, card, fromReserved) {
     for (var j = 0; j < p.reserved.length; j++) if (p.reserved[j].card === card) { idx = j; break; }
     if (idx >= 0) p.reserved.splice(idx, 1); // 防御：未找到则不删
   } else {
-    // 从桌面牌堆弹出该牌（堆顶被买走，下一张补上）
+    // 买走展示牌，并从该级牌库补一张到空位（牌库耗尽则留空）
     for (var t = 1; t <= 3; t++) {
       for (var c2 = 0; c2 < 4; c2++) {
         var d = g.decks[t][c2];
-        if (d.length && d[d.length - 1].uid === card.uid) { d.pop(); break; }
+        if (d.length && d[d.length - 1].uid === card.uid) {
+          d.pop();
+          if (g.draw[t].length) d.push(g.draw[t].pop());
+          break;
+        }
       }
     }
   }
@@ -537,9 +548,9 @@ function uiIsSelectable(g, key) {
         var t = +parts[1], col = +parts[2];
         return g.decks[t][col].length > 0 && g.gold > 0 && p.reserved.length < 3;
       }
-      if (parts[0] === 'deck') { // 盲保留牌堆顶
-        var t2 = +parts[1], col2 = +parts[2];
-        return g.decks[t2][col2].length > 0 && g.gold > 0 && p.reserved.length < 3;
+      if (parts[0] === 'deck') { // 盲保留：从牌库顶拿一张
+        var t2 = +parts[1];
+        return g.draw[t2].length > 0 && g.gold > 0 && p.reserved.length < 3;
       }
       return false;
     }
@@ -575,7 +586,9 @@ function uiCanExecute(g) {
   switch (UI.mode) {
     case 'take3': {
       // 可选数量：受可拿颜色数与资源总量上限（剩余空间）约束
-      return UI.selected.length === take3MaxPick(g, p);
+      var maxPick3 = take3MaxPick(g, p);
+      // maxPick3 为 0 表示无剩余空间或无可拿颜色，不可执行
+      return maxPick3 > 0 && UI.selected.length === maxPick3;
     }
     case 'take2': return UI.selected.length === 1;
     case 'buy': return UI.selected.length === 1;
@@ -606,8 +619,8 @@ function uiExecute(g) {
       break;
     }
     case 'reserve': {
-      if (parts[0] === 'card') execReserve(g, p, +parts[1], +parts[2]);
-      else execReserve(g, p, +parts[1], +parts[2]); // 'deck:tier:col'
+      if (parts[0] === 'card') execReserve(g, p, +parts[1], +parts[2], false);
+      else execReserve(g, p, +parts[1], +parts[2], true); // 'deck:tier:col' 盲保留牌库
       break;
     }
   }
@@ -624,6 +637,23 @@ function uiConfirmNoble(g) {
   UI.pickNoble = null;
   finishTurnCore(g);
   return true;
+}
+
+// 4 种行动各自是否可用（含资源总量上限约束，与按钮渲染判定一致）
+function uiActionFlags(g) {
+  var p = g.players[g.current];
+  var total = playerGemTotal(p);
+  return [
+    canTakeThree(g, p) && total < GEM_TOTAL_MAX,
+    canTakeTwo(g, p) && total <= GEM_TOTAL_MAX - 2,
+    canBuy(g, p),
+    canReserve(g, p) && total < GEM_TOTAL_MAX
+  ];
+}
+// 行动阶段且 4 种行动全部不可用时，只能跳过
+function uiAllActionsDisabled(g) {
+  if (g.phase !== 'action') return false;
+  return uiActionFlags(g).every(function (f) { return !f; });
 }
 
 </script>
@@ -985,16 +1015,19 @@ function hitTest(wx, wy) {
 }
 
 // 发光管理：为某 key 设置/清除发光（rot：发光矩形绕中心旋转角，用于旋转的操作栏按钮）
+// expand：光晕外扩（每侧 px），默认 6 保持原样；重叠排列的元素（如面板保留牌）传 0，避免光框画到相邻元素上
 var GLOW_COLOR = { green: '#35e06a', blue: '#3aa0ff', gold: '#ffd75e' };
-function setGlow(key, color, x, y, w, h, z, rot) {
+function setGlow(key, color, x, y, w, h, z, rot, expand) {
   var g = SceneRoot.glows.get(key);
   if (!color) {
     if (g) { SceneRoot.root.remove(g.mesh); SceneRoot.glows.delete(key); }
     return;
   }
+  var ex = expand === undefined ? 6 : expand;
+  var gw = w + ex * 2, gh = h + ex * 2;
   if (!g) {
-    var tex = glowTex(w + 12, h + 12, color);
-    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(w + 12, h + 12), new THREE.MeshBasicMaterial({
+    var tex = glowTex(gw, gh, color);
+    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh), new THREE.MeshBasicMaterial({
       map: tex, transparent: true, alphaTest: 0.02, depthWrite: false
     }));
     mesh.position.set(x, y, (z === undefined ? 1 : z) + 0.5);
@@ -1003,13 +1036,13 @@ function setGlow(key, color, x, y, w, h, z, rot) {
     g = { mesh: mesh, phase: Math.random() * Math.PI * 2 };
     SceneRoot.glows.set(key, g);
   }
-  g.x = x; g.y = y; g.w = w + 12; g.h = h + 12;
+  g.x = x; g.y = y; g.w = gw; g.h = gh;
   g.mesh.position.set(x, y, (z === undefined ? 1 : z) + 0.5);
   // 换旋转（布局位置随回合变化后，发光矩形同步）
   if (g.rot !== rot) { g.rot = rot; g.mesh.rotation.z = rot || 0; }
   // 换颜色（先比较旧值再赋值，已存在的发光才能从绿→蓝等切换）
   if (g.color !== color) {
-    g.mesh.material.map = glowTex(w + 12, h + 12, color);
+    g.mesh.material.map = glowTex(gw, gh, color);
     g.mesh.material.needsUpdate = true;
     g.color = color;
   }
@@ -1367,7 +1400,11 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
       var by2 = midY - rh / 2;
       var ctex = cardTex(r2.card, rw, rh);
       ctx.drawImage(ctex.image, bx2, by2, rw, rh);
-      rcCards.push({ cx: bx2 + rw / 2, cy: midY, w: rw, h: rh, uid: r2.card.uid });
+      // 可见区域（内容坐标）：最新（最右）牌完整可见；其余牌的右侧被相邻牌遮挡，
+      // 露出左侧 step 段（0.62*rw）——发光框须限于该可见区域，才能避免与相邻保留牌的光框交叠穿透
+      var visW2 = (ri === showN - 1) ? rw : step;
+      var visCx2 = (ri === showN - 1) ? bx2 + rw / 2 : bx2 + visW2 / 2;
+      rcCards.push({ cx: bx2 + rw / 2, cy: midY, w: rw, h: rh, uid: r2.card.uid, visCx: visCx2, visW: visW2 });
     }
   }
   return rcCards;
@@ -1415,8 +1452,18 @@ var Home = {
     Home.playerBtns = { x: bx0, y: by, w: bw, h: bh, gap: 14 };
 
     var sbw = Math.min(220, W * 0.5), sbh = 56;
-    mkMesh(btnTex('开 始 游 戏', sbw, sbh, { bg: '#3f7fd4', fg: '#fff', border: '#2c5588', key: 'start' }), sbw, sbh, 0, H / 2 - H * 0.68, 2);
-    addClickable('home:start', 0, H / 2 - H * 0.68, sbw, sbh, 2);
+    var startY = H / 2 - H * 0.68;
+    mkMesh(btnTex('开 始 游 戏', sbw, sbh, { bg: '#3f7fd4', fg: '#fff', border: '#2c5588', key: 'start' }), sbw, sbh, 0, startY, 2);
+    addClickable('home:start', 0, startY, sbw, sbh, 2);
+
+    // 有对局存档时，在开始按钮下方显示「对局读取」按钮（读档成功/失败后自动清理）
+    var hasS = hasSave();
+    var rbh = 44, ry = 0;
+    if (hasS) {
+      ry = startY - sbh / 2 - 14 - rbh / 2;
+      mkMesh(btnTex('对 局 读 取', sbw, rbh, { bg: '#2e8b57', fg: '#fff', border: '#1f6b41', key: 'load' }), sbw, rbh, 0, ry, 2);
+      addClickable('home:load', 0, ry, sbw, rbh, 2);
+    }
 
     // 画布缩放控件：[-] 缩放 100% [+]（每 step ±10%，范围 50%~200%）
     var zts = Math.min(13, W * 0.035);
@@ -1424,7 +1471,9 @@ var Home = {
     var ztw = (ztxt.length * zts + zts) * 1.1;      // 文本宽度（100%~200% 字符数恒定，布局不漂移）
     var zbb = Math.min(44, W * 0.12);
     var zgap = 14;
-    var zy = (H / 2 - H * 0.68) - sbh / 2 - 18 - zbb / 2;   // 开始按钮下方
+    var zy = hasS
+      ? ry - rbh / 2 - 14 - zbb / 2        // 读取按钮下方
+      : startY - sbh / 2 - 18 - zbb / 2;   // 开始按钮下方
     var zxL = -(ztw / 2 + zgap + zbb / 2), zxR = -zxL;
     mkMesh(btnTex('-', zbb, zbb, { bg: '#3a465e', fg: '#dfe8f8', border: '#4a5874', key: 'zo' }), zbb, zbb, zxL, zy, 2);
     addClickable('home:zoomOut', zxL, zy, zbb, zbb, 2);
@@ -1432,7 +1481,7 @@ var Home = {
     mkMesh(btnTex('+', zbb, zbb, { bg: '#3a465e', fg: '#dfe8f8', border: '#4a5874', key: 'zi' }), zbb, zbb, zxR, zy, 2);
     addClickable('home:zoomIn', zxR, zy, zbb, zbb, 2);
 
-    mkTextMesh('规则：轮流行动 · 拿宝石 / 买牌 / 保留 · 先达 15 分并完成本轮者胜', 0, H / 2 - H * 0.85, Math.min(13, W * 0.032), 'rgba(255,255,255,0.55)', { key: 'rules', bold: false });
+    mkTextMesh('规则：轮流行动 · 拿宝石 / 买牌 / 保留 · 先达 15 分并完成本轮者胜', 0, hasS ? H / 2 - H * 0.93 : H / 2 - H * 0.85, Math.min(13, W * 0.032), 'rgba(255,255,255,0.55)', { key: 'rules', bold: false });
     this.refresh();
   },
   refresh: function () {
@@ -1453,11 +1502,16 @@ var Home = {
     if (key === 'home:zoomIn' || key === 'home:zoomOut') {
       playSfx('tap');
       R.zoom = Math.max(0.5, Math.min(2, key === 'home:zoomIn' ? R.zoom * 1.1 : R.zoom / 1.1));
+      saveZoom();     // 持久化缩放值，下次打开自动恢复
       applyZoom();      // Three.js 内部逻辑尺寸缩放（R.W/R.H 变化），canvas 显示尺寸不变
       rebuildScreen();  // 布局基准变化，重建当前屏幕（缩放文本同步刷新）
       return;
     }
     if (key === 'home:start') { playSfx('start'); startGame(Home.players); }
+    if (key === 'home:load') {
+      playSfx('start');
+      if (!loadGame()) { playSfx('err'); rebuildScreen(); }   // 无有效存档：刷新首页使按钮消失
+    }
   },
 };
 
@@ -1467,7 +1521,9 @@ var Home = {
 var PauseModal = {
   visible: false,
   group: null,
+  saved: false,      // 本次打开弹窗期间是否已存档（按钮文案反馈）
   open: function () {
+    this.saved = false;
     this.visible = true;
     this.render();
   },
@@ -1485,7 +1541,7 @@ var PauseModal = {
       ctx.fillStyle = 'rgba(5,8,14,0.72)';
       ctx.fillRect(0, 0, w, h);
     }), W, H, 0, 0, 9, g);
-    var bw = Math.min(300, W * 0.7), bh = 200;
+    var bw = Math.min(300, W * 0.7), bh = 258;
     mkMeshIn(makeTex('ppanel', bw, bh, function (ctx, w, h) {
       ctx.fillStyle = '#1d2637';
       rr(ctx, 0, 0, w, h, 14);
@@ -1496,15 +1552,22 @@ var PauseModal = {
       ctx.stroke();
       text(ctx, '游戏暂停', w / 2, 36, 18, '#f5d76e', 'center');
       text(ctx, '当前进度已保留', w / 2, 64, 11, 'rgba(255,255,255,0.55)', 'center', false);
-    }), bw, bh, 0, 10, 10, g);
+    }), bw, bh, 0, 12, 10, g);
     var bw2 = Math.min(200, bw * 0.7), bh2 = 42;
-    mkMeshIn(btnTex('继续游戏', bw2, bh2, { bg: '#2e8b57', fg: '#fff', border: '#1f6b41', key: 'pres' }), bw2, bh2, 0, 8, 11, g);
-    addClickable('pause:resume', 0, 8, bw2, bh2, 11);
-    mkMeshIn(btnTex('返回首页', bw2, bh2, { bg: '#3a465e', fg: '#cfd8e8', border: '#4a5874', key: 'phome' }), bw2, bh2, 0, -48, 11, g);
-    addClickable('pause:home', 0, -48, bw2, bh2, 11);
+    mkMeshIn(btnTex('继续游戏', bw2, bh2, { bg: '#2e8b57', fg: '#fff', border: '#1f6b41', key: 'pres' }), bw2, bh2, 0, 20, 11, g);
+    addClickable('pause:resume', 0, 20, bw2, bh2, 11);
+    mkMeshIn(btnTex(this.saved ? '已存档 ✓' : '对局存档', bw2, bh2, { bg: this.saved ? '#3a465e' : '#b8860b', fg: this.saved ? '#9fb2cc' : '#fff', border: this.saved ? '#4a5874' : '#8a6508', key: 'psave' }), bw2, bh2, 0, -36, 11, g);
+    addClickable('pause:save', 0, -36, bw2, bh2, 11);
+    mkMeshIn(btnTex('返回首页', bw2, bh2, { bg: '#3a465e', fg: '#cfd8e8', border: '#4a5874', key: 'phome' }), bw2, bh2, 0, -92, 11, g);
+    addClickable('pause:home', 0, -92, bw2, bh2, 11);
   },
   onTap: function (key) {
     if (key === 'pause:resume') { playSfx('tap'); this.close(); }
+    else if (key === 'pause:save') {
+      playSfx('tap');
+      if (saveGame()) { this.saved = true; this.render(); }
+      else playSfx('err');
+    }
     else if (key === 'pause:home') { playSfx('tap'); this.close(); goHome(); }
   },
 };
@@ -1654,7 +1717,7 @@ var GameScreen = {
     this.panelMeshes[pi] = mesh;
     // 每张保留牌的点击区 → 世界坐标 + 记录位置供光圈使用
     var self2 = this;
-    rcCards.forEach(function (rc2) {
+    rcCards.forEach(function (rc2, ri2) {
       var wx, wy, ww, wh;
       if (isHoriz) {
         var rcw2 = panelLocalToWorld(area, pos, rc2.cx - w / 2, h / 2 - rc2.cy, rc2.w, rc2.h);
@@ -1667,8 +1730,21 @@ var GameScreen = {
         else { wx = area.x + rc2.cy - w / 2; wy = area.y + rc2.cx - h / 2; }
         ww = rc2.h; wh = rc2.w;
       }
-      addClickable('reserved:' + rc2.uid, wx, wy, ww, wh, 1.5);
-      self2.resvSpots[rc2.uid] = { x: wx, y: wy, w: ww, h: wh };
+      // 点击区 z 随排列顺序递增（ri 越大 = 越靠右 = 越新 = 绘制越晚 = 上层）：
+      // hitTest 按 z 大者优先，交叠区点选时命中最上层显示的牌
+      addClickable('reserved:' + rc2.uid, wx, wy, ww, wh, 1.5 + ri2 * 0.1);
+      // 光框可见区域（世界坐标）：只包住该牌未被相邻保留牌遮挡的可见部分，避免光框交叠穿透相邻卡牌
+      var vx, vy, vw2, vh2;
+      if (isHoriz) {
+        var rv2 = panelLocalToWorld(area, pos, rc2.visCx - w / 2, h / 2 - rc2.cy, rc2.visW, rc2.h);
+        vx = rv2.x; vy = rv2.y; vw2 = rv2.w; vh2 = rv2.h;
+      } else {
+        vx = wx; vw2 = rc2.h;   // 世界水平尺寸/位置不变（牌高与牌中心）
+        if (pos === 2) { vy = area.y + h / 2 - rc2.visCx; }
+        else { vy = area.y + rc2.visCx - h / 2; }
+        vh2 = rc2.visW;
+      }
+      self2.resvSpots[rc2.uid] = { x: wx, y: wy, w: ww, h: wh, vx: vx, vy: vy, vw: vw2, vh: vh2 };
     });
   },
 
@@ -1693,8 +1769,7 @@ var GameScreen = {
 
     // 牌区 + 牌堆标签计数
     for (var t = 1; t <= 3; t++) {
-      var tierCnt = 0;
-      for (var c4 = 0; c4 < 4; c4++) tierCnt += g.decks[t][c4].length;
+      var tierCnt = g.draw[t].length; // 牌库剩余数（展示区 4 张另计）
       var lb = L.deckLabels[t];
       updateTextMesh(this.deckLabelNums[t], 'x' + tierCnt, lb.x, lb.y - lb.h * 0.16, Math.max(9, lb.w * 0.24), '#5a5a68', { key: 'dl' + t });
       for (var c = 0; c < 4; c++) {
@@ -1714,7 +1789,8 @@ var GameScreen = {
           m.material.needsUpdate = true;
         }
         var back = this.deckMeshes[key];
-        if (back) back.visible = g.decks[t][c].length > 0;
+        // 背面仅在展示位有牌且牌库还有牌（可盲保留）时显示
+        if (back) back.visible = g.decks[t][c].length > 0 && g.draw[t].length > 0;
       }
     }
 
@@ -1729,13 +1805,7 @@ var GameScreen = {
 
     // 动作按钮（资源总量上限：每人最多同时持有 10 个含黄金；满 10 时不可再拿/保留，9 时不可拿2个）
     var canAct = g.phase === 'action';
-    var total = playerGemTotal(p);
-    var actions = [
-      canTakeThree(g, p) && total < GEM_TOTAL_MAX,
-      canTakeTwo(g, p) && total <= GEM_TOTAL_MAX - 2,
-      canBuy(g, p),
-      canReserve(g, p) && total < GEM_TOTAL_MAX
-    ];
+    var actions = uiActionFlags(g);
     var actLabels = ['拿3色', '拿2个', '购买', '保留'];
     var modes = ['take3', 'take2', 'buy', 'reserve'];
     for (var bi = 0; bi < 4; bi++) {
@@ -1751,14 +1821,17 @@ var GameScreen = {
       else setGlow('act' + bi, null);
     }
 
-    // 执行按钮
+    // 执行按钮（4 种行动全部不可用时，改为「跳过」并亮起）
     var e = L.bar.exec;
-    var canExec = canAct && uiCanExecute(g);
-    this.execBtnMesh.material.map = btnTex('执行 ✓', e.w, e.h, canExec
-      ? { bg: '#2e8b57', fg: '#fff', border: '#35e06a', key: 'exe' }
-      : { bg: '#23302a', fg: '#4c6258', border: '#2c3a33', key: 'exed' });
+    var mustSkip = canAct && uiAllActionsDisabled(g);
+    var canExec = canAct && !mustSkip && uiCanExecute(g);
+    this.execBtnMesh.material.map = mustSkip
+      ? btnTex('跳过 ⏭', e.w, e.h, { bg: '#2e8b57', fg: '#fff', border: '#35e06a', key: 'exsk' })
+      : btnTex('执行 ✓', e.w, e.h, canExec
+        ? { bg: '#2e8b57', fg: '#fff', border: '#35e06a', key: 'exe' }
+        : { bg: '#23302a', fg: '#4c6258', border: '#2c3a33', key: 'exed' });
     this.execBtnMesh.material.needsUpdate = true;
-    if (canExec) setGlow('execg', 'green', e.x, e.y, e.w, e.h, 4.6, e.rot);
+    if (canExec || mustSkip) setGlow('execg', 'green', e.x, e.y, e.w, e.h, 4.6, e.rot);
     else setGlow('execg', null);
 
     // 说明文字（窄屏时缩小字号避免与按钮重叠）
@@ -1773,6 +1846,7 @@ var GameScreen = {
   msgFor: function (g) {
     var p = g.players[g.current];
     if (g.phase === 'noble-choice') return '满足多张贵族卡，请点选一张后按执行';
+    if (g.phase === 'action' && uiAllActionsDisabled(g)) return '无可行动作，请按「跳过」结束本回合';
     var selN = UI.selected.length;
     switch (UI.mode) {
       case 'take3': {
@@ -1823,7 +1897,14 @@ var GameScreen = {
         var s = spots[r.card.uid];
         if (!s || !canAfford(p, r.card)) return;
         var key4 = 'reserved:' + r.card.uid;
-        setGlow('rv' + r.card.uid, UI.selected.indexOf(key4) >= 0 ? 'blue' : 'green', s.x, s.y, s.w, s.h, 1.5);
+        // 光框限于该牌未被相邻保留牌遮挡的可见区域（vx/vy/vw/vh），并关闭外扩（expand=0），
+        // 使发光线框只落在自己的牌面上，不与相邻卡牌交叠穿透
+        setGlow('rv' + r.card.uid, UI.selected.indexOf(key4) >= 0 ? 'blue' : 'green',
+          s.vx !== undefined ? s.vx : s.x,
+          s.vy !== undefined ? s.vy : s.y,
+          s.vw !== undefined ? s.vw : s.w,
+          s.vh !== undefined ? s.vh : s.h,
+          1.5, 0, 0);
       });
     }
     // 贵族选择阶段
@@ -1896,15 +1977,23 @@ var GameScreen = {
     if (key.indexOf('act:') === 0) {
       var bi = +key.slice(4);
       var modes = ['take3', 'take2', 'buy', 'reserve'];
-      var p = g.players[g.current];
-      var ok = [canTakeThree(g, p), canTakeTwo(g, p), canBuy(g, p), canReserve(g, p)][bi];
-      if (!ok) { playSfx('err'); return; }
+      // 灰掉的按钮（不可行动）点击不进入任何行动逻辑
+      if (g.phase !== 'action' || !uiActionFlags(g)[bi]) { playSfx('err'); return; }
       uiSelectMode(modes[bi]);
       playSfx('tap');
       this.refresh();
       return;
     }
     if (key === 'exec') {
+      // 4 种行动全部不可用：此时「执行」已变为「跳过」，点击跳过本回合
+      if (g.phase === 'action' && uiAllActionsDisabled(g)) {
+        uiReset();
+        playSfx('tap');
+        endTurn(g);
+        if (g.phase === 'end') showScreen('end');
+        else showScreen('game');   // 重建：操作栏跟随新回合玩家座位
+        return;
+      }
       var r = uiExecute(g);
       if (r.ok) {
         playSfx('buy');
@@ -1989,6 +2078,76 @@ function goHome() {
   showScreen('home');
 }
 
+// ---------- 对局存档 / 读档（localStorage 持久化，始终最多 1 份） ----------
+var SAVE_KEY = 'gg_save_v1';
+function saveGame() {
+  try {
+    if (!G.game || G.game.over) return false;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(G.game));
+    return true;
+  } catch (e) { return false; }
+}
+function hasSave() {
+  try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+}
+function clearSave() {
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+}
+function loadGame() {
+  var raw = null;
+  try { raw = localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+  if (!raw) return false;
+  try {
+    var g = JSON.parse(raw);
+    // 结构校验：缺核心字段视为坏档，清理后返回失败
+    if (!g || !Array.isArray(g.players) || !g.decks || !g.bank || !Array.isArray(g.nobles) || typeof g.current !== 'number') {
+      clearSave();
+      return false;
+    }
+    // 旧版存档迁移：decks[t] 原为 4 列独立堆（尾部=堆顶），迁移为「展示位(每格1张) + 每级牌库 draw[t]」
+    if (!g.draw) {
+      g.draw = { 1: [], 2: [], 3: [] };
+      for (var mt = 1; mt <= 3; mt++) {
+        var merged = [];
+        for (var mc = 0; mc < 4; mc++) {
+          var md = g.decks[mt][mc] || [];
+          for (var mk = 0; mk < md.length - 1; mk++) merged.push(md[mk]);
+          g.decks[mt][mc] = md.length ? [md[md.length - 1]] : [];
+        }
+        g.draw[mt] = shuffle(merged);
+      }
+    }
+    // 防御：展示位每格最多 1 张，多余的塞回牌库
+    for (var t2 = 1; t2 <= 3; t2++) {
+      g.draw[t2] = g.draw[t2] || [];
+      for (var c3 = 0; c3 < 4; c3++) {
+        var dv = g.decks[t2][c3] || [];
+        while (dv.length > 1) g.draw[t2].push(dv.pop());
+      }
+    }
+    G.game = g;
+    uiReset();
+    showScreen('game');
+    clearSave();          // 读档成功后清理存档记录
+    return true;
+  } catch (e) { clearSave(); return false; }
+}
+
+// ---------- 缩放值持久化（localStorage，无数据默认 100%） ----------
+var ZOOM_KEY = 'gg_zoom_v1';
+function saveZoom() {
+  try { localStorage.setItem(ZOOM_KEY, String(R.zoom)); } catch (e) {}
+}
+function loadZoom() {
+  try {
+    var raw = localStorage.getItem(ZOOM_KEY);
+    if (raw === null) return 1;              // 无缓存：默认 100%
+    var z = parseFloat(raw);
+    if (!isFinite(z)) return 1;              // 非法数据：回退 100%
+    return Math.max(0.5, Math.min(2, z));    // 收敛到有效范围 50%~200%
+  } catch (e) { return 1; }
+}
+
 </script>
 
 <script>
@@ -2046,6 +2205,7 @@ function initApp() {
   });
   el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
+  R.zoom = loadZoom();   // 读取持久化缩放值（无缓存则默认 100%）
   resize();
   var ld = document.getElementById('loading');
   if (ld) ld.style.display = 'none';
@@ -2055,11 +2215,15 @@ function initApp() {
 
 var resizeTimer = null;   // resize 防抖定时器
 // 应用 Three.js 内部 UI 逻辑尺寸缩放：R.W/R.H（布局基准 + 渲染分辨率 + 相机范围）= 窗口基准 × zoom，
-// canvas CSS 显示尺寸保持窗口大小（updateStyle=false），UI 按百分比布局重排后始终铺满窗口、无黑边
+// canvas 显示尺寸始终 = 窗口大小（updateStyle=true 时显式设置 CSS），UI 按百分比布局重排后始终铺满窗口、无黑边
 function applyZoom(updateStyle) {
   R.W = Math.max(1, Math.round(R._vw * R.zoom));
   R.H = Math.max(1, Math.round(R._vh * R.zoom));
-  renderer.setSize(R.W, R.H, !!updateStyle);
+  renderer.setSize(R.W, R.H, false);                     // drawing buffer = 逻辑尺寸（含 zoom 缩放）
+  if (updateStyle) {                                     // canvas CSS 显示尺寸始终 = 窗口大小
+    renderer.domElement.style.width = R._vw + 'px';
+    renderer.domElement.style.height = R._vh + 'px';
+  }
   camera.left = -R.W / 2;
   camera.right = R.W / 2;
   camera.top = R.H / 2;
