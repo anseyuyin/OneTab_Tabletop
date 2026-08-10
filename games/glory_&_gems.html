@@ -16,15 +16,47 @@
     touch-action: none; overscroll-behavior: none;
   }
   canvas { display: block; touch-action: none; }
+  /* ===== 加载页（深蓝金奢华氛围 + 优雅淡出） ===== */
   #loading {
     position: fixed; inset: 0; z-index: 999;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    background: #141a28; color: #f5d76e;
-    font-size: 18px; letter-spacing: 2px;
+    background:
+      radial-gradient(1100px 620px at 50% -12%, rgba(63,127,212,0.20), transparent 62%),
+      radial-gradient(820px 460px at 88% 112%, rgba(240,201,60,0.10), transparent 60%),
+      radial-gradient(760px 480px at 8% 108%, rgba(70,96,150,0.28), transparent 62%),
+      #0c111e;
+    color: #f5d76e;
+    font-size: 18px; letter-spacing: 3px;
+    transition: opacity .55s ease;
   }
-  #loading .gem { font-size: 42px; margin-bottom: 12px; animation: pulse 1.2s ease-in-out infinite; }
-  @keyframes pulse { 0%,100% { transform: scale(1); opacity: .8; } 50% { transform: scale(1.15); opacity: 1; } }
-  #loading .sub { color: rgba(255,255,255,.5); font-size: 12px; margin-top: 8px; letter-spacing: 1px; }
+  #loading .gem {
+    font-size: 46px; margin-bottom: 16px;
+    filter: drop-shadow(0 0 20px rgba(245,215,110,0.55));
+    animation: gemFloat 2.4s ease-in-out infinite;
+  }
+  #loading .l-title {
+    font-size: 24px; letter-spacing: 10px; color: #f2d989;
+    text-shadow: 0 0 24px rgba(245,215,110,0.35);
+    animation: fadeInDown 1s ease both;
+  }
+  #loading .sub {
+    color: rgba(255,255,255,.42); font-size: 12px; letter-spacing: 6px;
+    margin-top: 12px; animation: fadeIn 1.2s .25s ease both;
+  }
+  #loading .l-bar {
+    width: 180px; height: 2px; margin-top: 28px; border-radius: 2px;
+    background: rgba(255,255,255,0.10); overflow: hidden;
+    animation: fadeIn 1s .4s ease both;
+  }
+  #loading .l-bar-fill {
+    width: 38%; height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, rgba(240,201,60,0.2), #f5d76e, rgba(240,201,60,0.2));
+    animation: barSlide 1.4s ease-in-out infinite;
+  }
+  @keyframes gemFloat { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-7px) scale(1.06); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes barSlide { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
 
   /* ===== 玩法说明弹窗（DOM 模态：自适应窗口 + 内容纵向滚动） ===== */
   #help-overlay {
@@ -99,7 +131,7 @@
 </style>
 </head>
 <body>
-<div id="loading"><div class="gem">💎</div>荣光宝石商 加载中…<div class="sub">S P L E N D O R</div></div>
+<div id="loading"><div class="gem">💎</div><div class="l-title">荣光宝石商</div><div class="sub">S P L E N D O R</div><div class="l-bar"><div class="l-bar-fill"></div></div></div>
 <script>
 /**
  * @license
@@ -825,11 +857,11 @@ function drawGemChip(ctx, cx, cy, r, hex, dark, stroke) {
 // 中华传统菱格纹：双层菱形 + 中心菱花平铺底纹（低透明度装饰，不干扰对局内容）
 // 菱形顶点相接、隔行错位半格，形成织锦/窗棂式菱格网
 // 精修：外菱深铜沉稳、内菱浅金提亮，一线一色形成套线层次；中心小菱花呼应主题
-function drawRhombusPattern(ctx, w, h) {
+function drawRhombusPattern(ctx, w, h, alpha) {
   var cell = Math.max(62, Math.round(Math.min(w, h) * 0.13 / 1.5));   // 网格边长
   var hw = cell / 2, hh = cell / 2;                             // 菱形半宽 / 半高（正菱形）
   ctx.save();
-  ctx.globalAlpha = 0.15;
+  ctx.globalAlpha = alpha === undefined ? 0.15 : alpha;         // 透明度可调（首页背景用更淡的值）
   ctx.lineJoin = 'miter';
   var row = 0;
   for (var gy = -cell; gy < h + cell; gy += cell, row++) {
@@ -1015,9 +1047,167 @@ function btnTex(label, w, h, style) {
   });
 }
 
+// ---------- 首页高级质感元素（深蓝金奢华风） ----------
+// 高级按钮：垂直渐变主体 + 顶部内高光 + 底部投影渐隐 + 细描边 + 文字细投影
+function luxeBtnTex(label, w, h, style) {
+  style = style || {};
+  var c1 = style.c1 || '#5f9ef0', c2 = style.c2 || '#2a56a8';
+  var fg = style.fg || '#ffffff';
+  var border = style.border || 'rgba(0,0,0,0.35)';
+  return makeTex('lbtn' + label + (style.key || ''), w, h, function (ctx, W, H) {
+    var r = Math.min(12, H * 0.32);
+    // 主体渐变（亮 → 暗，模拟受光面）
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, c1);
+    g.addColorStop(1, c2);
+    ctx.fillStyle = g;
+    rr(ctx, 0, 0, W, H, r);
+    ctx.fill();
+    // 顶部内侧高光（中间亮两侧暗，营造弧面）
+    var hg = ctx.createLinearGradient(0, 0, W, 0);
+    hg.addColorStop(0, 'rgba(255,255,255,0.05)');
+    hg.addColorStop(0.5, 'rgba(255,255,255,0.26)');
+    hg.addColorStop(1, 'rgba(255,255,255,0.05)');
+    ctx.fillStyle = hg;
+    rr(ctx, 0, 0, W, Math.min(12, H * 0.38), r);
+    ctx.fill();
+    // 底部投影渐隐（落地感）
+    var sg = ctx.createLinearGradient(0, H * 0.82, 0, H);
+    sg.addColorStop(0, 'rgba(0,0,0,0)');
+    sg.addColorStop(1, 'rgba(0,0,0,0.28)');
+    ctx.fillStyle = sg;
+    rr(ctx, 0, H * 0.8, W, H * 0.2, r);
+    ctx.fill();
+    // 细描边
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = border;
+    rr(ctx, 0.75, 0.75, W - 1.5, H - 1.5, Math.max(1, r - 0.75));
+    ctx.stroke();
+    // 文字 + 细投影
+    var fs = Math.min(Math.max(10, H * 0.38), (W * 0.92) / Math.max(1, label.length));
+    ctx.font = 'bold ' + fs + 'px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 3;
+    ctx.shadowOffsetY = 1;
+    ctx.fillStyle = fg;
+    ctx.fillText(label, W / 2, H / 2 + 1);
+  });
+}
+
+// 柔光斑纹理（径向渐变，中心亮 → 边缘透明；用于首页氛围呼吸光）
+// noCache=true：避免屏幕重建后缓存继续持有已被 dispose 的纹理
+function spotTex(color, r) {
+  return makeTex('spot' + color + r, r * 2, r * 2, function (ctx, w, h) {
+    var g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    g.addColorStop(0, color);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }, true);
+}
+
+// 首页主标题：金色渐变字 + 柔光 + 顶部细描边 + 底部装饰金线/菱形
+function homeTitleTex(str, w, h, size) {
+  return makeTex('htitle' + str + size, w, h, function (ctx, W, H) {
+    var ty = H * 0.42;   // 文字中心（下方留白给装饰线）
+    ctx.save();
+    ctx.shadowColor = 'rgba(245,215,110,0.5)';
+    ctx.shadowBlur = 26;
+    var tg = ctx.createLinearGradient(0, ty - size * 0.5, 0, ty + size * 0.5);
+    tg.addColorStop(0, '#fdf4d2');
+    tg.addColorStop(0.4, '#f5d76e');
+    tg.addColorStop(0.78, '#dcaa3c');
+    tg.addColorStop(1, '#b98a24');
+    ctx.font = 'bold ' + size + 'px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = tg;
+    ctx.fillText(str, W / 2, ty);
+    // 顶部细高光描边（金属质感；先清掉柔光 shadow，避免描边带硬投影）
+    ctx.shadowColor = 'rgba(0,0,0,0)';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = 'rgba(255,250,225,0.35)';
+    ctx.lineWidth = 1.2;
+    ctx.strokeText(str, W / 2, ty);
+    ctx.restore();
+    // 底部装饰：左右金线 + 中央菱形
+    var ly = H * 0.9;
+    var lw2 = W * 0.22;
+    ctx.strokeStyle = 'rgba(220,170,60,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - lw2 - 12, ly);
+    ctx.lineTo(W / 2 - 10, ly);
+    ctx.moveTo(W / 2 + 10, ly);
+    ctx.lineTo(W / 2 + lw2 + 12, ly);
+    ctx.stroke();
+    var ds = Math.max(3, size * 0.07);
+    ctx.fillStyle = 'rgba(240,201,60,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(W / 2, ly - ds);
+    ctx.lineTo(W / 2 + ds, ly);
+    ctx.lineTo(W / 2, ly + ds);
+    ctx.lineTo(W / 2 - ds, ly);
+    ctx.closePath();
+    ctx.fill();
+  });
+}
+
+// 首页副标题：大间距字符 + 两侧小菱形
+function homeSubTex(str, w, h, size) {
+  return makeTex('hsub' + str + size, w, h, function (ctx, W, H) {
+    var sp = size * 0.5;   // 字符间距
+    ctx.font = size + 'px ' + FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var total = 0, cw = [], chars = str.split('');
+    for (var i = 0; i < chars.length; i++) { cw[i] = ctx.measureText(chars[i]).width; total += cw[i] + (i ? sp : 0); }
+    var x = W / 2 - total / 2;
+    ctx.fillStyle = 'rgba(240,201,60,0.6)';
+    for (var j = 0; j < chars.length; j++) {
+      ctx.fillText(chars[j], x + cw[j] / 2, H / 2 + 0.5);
+      x += cw[j] + sp;
+    }
+    // 两侧小菱形
+    var d = size * 0.4, y = H / 2;
+    ctx.fillStyle = 'rgba(240,201,60,0.45)';
+    [W / 2 - total / 2 - d * 1.7, W / 2 + total / 2 + d * 1.7].forEach(function (cx2) {
+      ctx.beginPath();
+      ctx.moveTo(cx2, y - d / 2);
+      ctx.lineTo(cx2 + d / 2, y);
+      ctx.lineTo(cx2, y + d / 2);
+      ctx.lineTo(cx2 - d / 2, y);
+      ctx.closePath();
+      ctx.fill();
+    });
+  });
+}
+
+// 首页标签行：文字 + 两侧小菱形（纹理宽度须由调用方预留菱形空间，见 Home.build）
+function homeTagTex(str, w, h, size) {
+  return makeTex('htag' + str + size, w, h, function (ctx, W, H) {
+    text(ctx, str, W / 2, H / 2 + 1, size, 'rgba(235,242,255,0.78)', 'center', false);
+    var tw = (str.length * size + size) * 1.1;   // 文本区宽度（与 mkTextMesh 宽度公式一致）
+    var d = size * 0.5, y = H / 2;
+    ctx.fillStyle = 'rgba(240,201,60,0.6)';
+    [W / 2 - tw / 2 - d * 1.6, W / 2 + tw / 2 + d * 1.6].forEach(function (cx2) {
+      ctx.beginPath();
+      ctx.moveTo(cx2, y - d / 2);
+      ctx.lineTo(cx2 + d / 2, y);
+      ctx.lineTo(cx2, y + d / 2);
+      ctx.lineTo(cx2 - d / 2, y);
+      ctx.closePath();
+      ctx.fill();
+    });
+  });
+}
+
 // 发光描边纹理（内部透明，四边发光）
 function glowTex(w, h, color) {
-  var col = color === 'blue' ? '#3aa0ff' : '#35e06a';
+  var col = color === 'blue' ? '#3aa0ff' : color === 'gold' ? '#ffd75e' : '#35e06a';
   return makeTex('glow' + color, w, h, function (ctx, W, H) {
     ctx.shadowColor = col;
     ctx.shadowBlur = Math.min(10, W * 0.12);
@@ -1747,26 +1937,109 @@ var Home = {
   build: function () {
     var W = R.W, H = R.H;
     var bg = makeTex('hbg', W, H, function (ctx, w, h) {
+      // 深蓝黑渐变基底（比旧版更深更沉，衬托金色 UI）
       var g = ctx.createLinearGradient(0, 0, 0, h);
-      g.addColorStop(0, '#1b2436');
-      g.addColorStop(0.55, '#2a3550');
-      g.addColorStop(1, '#141a28');
+      g.addColorStop(0, '#0d1424');
+      g.addColorStop(0.5, '#16203a');
+      g.addColorStop(1, '#0a0e1a');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
-      var gems = [[W * 0.12, H * 0.3], [W * 0.85, H * 0.22], [W * 0.2, H * 0.75], [W * 0.8, H * 0.68], [W * 0.5, H * 0.12]];
-      var cols = [COLOR_INFO.R.gem, COLOR_INFO.B.gem, COLOR_INFO.G.gem, GOLD_INFO.gem, COLOR_INFO.K.gem];
-      gems.forEach(function (gp, i) {
+      // 氛围光晕：顶部暖金 + 左下冷蓝 + 右下暗紫（低透明度，营造空间纵深）
+      var glows = [
+        [w * 0.5, h * 0.14, Math.max(w, h) * 0.48, 'rgba(240,201,60,0.10)'],
+        [w * 0.05, h * 0.92, Math.max(w, h) * 0.42, 'rgba(63,127,212,0.13)'],
+        [w * 0.97, h * 0.74, Math.max(w, h) * 0.44, 'rgba(96,64,160,0.10)'],
+      ];
+      glows.forEach(function (gp) {
+        var gg = ctx.createRadialGradient(gp[0], gp[1], 0, gp[0], gp[1], gp[2]);
+        gg.addColorStop(0, gp[3]);
+        gg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gg;
+        ctx.fillRect(0, 0, w, h);
+      });
+      // 底部渐深（视觉重心下沉）
+      var dg = ctx.createLinearGradient(0, h * 0.72, 0, h);
+      dg.addColorStop(0, 'rgba(0,0,0,0)');
+      dg.addColorStop(1, 'rgba(0,0,0,0.42)');
+      ctx.fillStyle = dg;
+      ctx.fillRect(0, 0, w, h);
+      // 极淡菱格纹（呼应对局桌面织锦底纹）
+      drawRhombusPattern(ctx, w, h, 0.05);
+      // 精致宝石装饰：八面切面剪影（渐变填充 + 顶部高光 + 轮廓光），避开中央 UI 竖列
+      var gems = [
+        { x: w * 0.09, y: h * 0.7, r: Math.min(30, w * 0.055), c: COLOR_INFO.B },
+        { x: w * 0.92, y: h * 0.66, r: Math.min(26, w * 0.05), c: GOLD_INFO },
+        { x: w * 0.08, y: h * 0.3, r: Math.min(20, w * 0.038), c: COLOR_INFO.G },
+        { x: w * 0.91, y: h * 0.24, r: Math.min(24, w * 0.045), c: COLOR_INFO.R },
+        { x: w * 0.5, y: h * 0.07, r: Math.min(15, w * 0.028), c: COLOR_INFO.K },
+      ];
+      gems.forEach(function (gp) {
         ctx.save();
-        ctx.globalAlpha = 0.45;
-        drawGemChip(ctx, gp[0], gp[1], Math.min(26, W * 0.06), cols[i], '#222', '#000');
+        ctx.globalAlpha = 0.55;
+        gemPath(ctx, gp.x, gp.y, gp.r);
+        var gg = ctx.createLinearGradient(gp.x - gp.r, gp.y - gp.r, gp.x + gp.r, gp.y + gp.r);
+        gg.addColorStop(0, gp.c.gem);
+        gg.addColorStop(1, gp.c.gemDark);
+        ctx.fillStyle = gg;
+        ctx.fill();
+        // 上部切面高光（模拟顶面反光）
+        ctx.globalAlpha = 0.7;
+        gemPath(ctx, gp.x, gp.y, gp.r * 0.52);
+        var hg = ctx.createLinearGradient(gp.x - gp.r * 0.5, gp.y - gp.r * 0.6, gp.x, gp.y);
+        hg.addColorStop(0, 'rgba(255,255,255,0.9)');
+        hg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = hg;
+        ctx.fill();
+        // 轮廓光
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1;
+        gemPath(ctx, gp.x, gp.y, gp.r);
+        ctx.stroke();
         ctx.restore();
       });
+      // 极淡噪点（材质颗粒感，避免色阶断层）
+      var nCount = Math.round(w * h * 0.00022);
+      for (var n = 0; n < nCount; n++) {
+        ctx.globalAlpha = Math.random() * 0.04;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(Math.random() * w, Math.random() * h, 1.2, 1.2);
+      }
+      ctx.globalAlpha = 1;
     });
     mkMesh(bg, W, H, 0, 0, 0);
 
-    mkTextMesh('荣光宝石商', 0, H / 2 - H * 0.22, Math.min(64, W * 0.17), '#f5d76e', { key: 'title', stroke: 'rgba(0,0,0,0.6)' });
-    mkTextMesh('S P L E N D O R', 0, H / 2 - H * 0.22 - Math.min(52, W * 0.13), Math.min(18, W * 0.045), 'rgba(255,255,255,0.5)', { key: 'sub', bold: false });
-    mkTextMesh('2~4 人 · 一台设备 · 轮流操作', 0, H / 2 - H * 0.35, Math.min(16, W * 0.04), 'rgba(255,255,255,0.75)', { key: 'tag' });
+    // ===== 标题区（金色渐变主标题 + 装饰线 + 大间距副标题 + 标签） =====
+    var titleSize = Math.min(64, W * 0.17);
+    var tW = (6 * titleSize + titleSize) * 1.1, tH = titleSize * 1.7;
+    var titleY = H / 2 - H * 0.2;
+    mkMesh(homeTitleTex('荣光宝石商', tW, tH, titleSize), tW, tH, 0, titleY, 3);
+    var subSize = Math.min(17, W * 0.042);
+    var subW = (8 * subSize + subSize) * 1.15, subH = subSize * 1.6;
+    var subY = titleY - tH * 0.4 - subSize * 0.9 - 6;   // 主标题装饰线下方
+    mkMesh(homeSubTex('SPLENDOR', subW, subH, subSize), subW, subH, 0, subY, 2);
+    var tagStr = '2~4 人 · 一台设备 · 轮流操作';
+    var tagSize = Math.min(15, W * 0.036);
+    var tagD = tagSize * 0.5;                          // 菱形尺寸（与 homeTagTex 内部一致）
+    var tagW = (tagStr.length * tagSize + tagSize) * 1.1 + 2 * (tagD * 1.6 + tagD / 2) + tagD;  // 文本 + 两侧菱形占位
+    var tagH = tagSize * 1.6;
+    mkMesh(homeTagTex(tagStr, tagW, tagH, tagSize), tagW, tagH, 0, H / 2 - H * 0.35, 2);
+
+    // ===== 氛围光斑（呼吸动画，由 animate 驱动；位于背景之上、按钮之下） =====
+    Home.fx = { spots: [] };
+    [
+      { x: W * 0.17, y: H * 0.44, r: Math.min(150, W * 0.16), c: 'rgba(63,127,212,0.32)', base: 0.5, speed: 0.0006 },
+      { x: W * 0.86, y: H * 0.48, r: Math.min(130, W * 0.14), c: 'rgba(240,201,60,0.28)', base: 0.45, speed: 0.0005 },
+      { x: W * 0.5, y: H * 0.18, r: Math.min(210, W * 0.24), c: 'rgba(130,160,230,0.22)', base: 0.4, speed: 0.0004 },
+    ].forEach(function (sp) {
+      var m = new THREE.Mesh(
+        new THREE.PlaneGeometry(sp.r * 2, sp.r * 2),
+        new THREE.MeshBasicMaterial({ map: spotTex(sp.c, sp.r), transparent: true, depthWrite: false })
+      );
+      m.position.set(sp.x, sp.y, 0.5);
+      SceneRoot.root.add(m);
+      Home.fx.spots.push({ mesh: m, base: sp.base, speed: sp.speed, phase: Math.random() * Math.PI * 2 });
+    });
 
     var bw = Math.min(120, W * 0.24), bh = 54;
     var labels = ['2 人', '3 人', '4 人'];
@@ -1775,14 +2048,14 @@ var Home = {
     var by = H / 2 - H * 0.52;
     for (var i = 0; i < 3; i++) {
       var key = 'home:p' + (i + 2);
-      mkMesh(btnTex(labels[i], bw, bh, { bg: '#2c3a56', fg: '#dfe8f8', border: '#3d4f75', key: key }), bw, bh, bx0 + i * (bw + 14), by, 2);
+      mkMesh(luxeBtnTex(labels[i], bw, bh, { c1: '#3c4f78', c2: '#232f4d', fg: '#e3ecfb', border: 'rgba(0,0,0,0.4)', key: key }), bw, bh, bx0 + i * (bw + 14), by, 2);
       addClickable(key, bx0 + i * (bw + 14), by, bw, bh, 2);
     }
     Home.playerBtns = { x: bx0, y: by, w: bw, h: bh, gap: 14 };
 
     var sbw = Math.min(220, W * 0.5), sbh = 56;
     var startY = H / 2 - H * 0.68;
-    mkMesh(btnTex('开 始 游 戏', sbw, sbh, { bg: '#3f7fd4', fg: '#fff', border: '#2c5588', key: 'start' }), sbw, sbh, 0, startY, 2);
+    mkMesh(luxeBtnTex('开 始 游 戏', sbw, sbh, { c1: '#5f9ef0', c2: '#2a56a8', fg: '#fff', border: 'rgba(10,25,60,0.55)', key: 'start' }), sbw, sbh, 0, startY, 2);
     addClickable('home:start', 0, startY, sbw, sbh, 2);
 
     // 有对局存档时，在开始按钮下方显示「对局读取」按钮（读档成功/失败后自动清理）
@@ -1790,7 +2063,7 @@ var Home = {
     var rbh = 44, ry = 0;
     if (hasS) {
       ry = startY - sbh / 2 - 14 - rbh / 2;
-      mkMesh(btnTex('对 局 读 取', sbw, rbh, { bg: '#2e8b57', fg: '#fff', border: '#1f6b41', key: 'load' }), sbw, rbh, 0, ry, 2);
+      mkMesh(luxeBtnTex('对 局 读 取', sbw, rbh, { c1: '#3da06a', c2: '#23613f', fg: '#fff', border: 'rgba(0,30,15,0.5)', key: 'load' }), sbw, rbh, 0, ry, 2);
       addClickable('home:load', 0, ry, sbw, rbh, 2);
     }
 
@@ -1804,10 +2077,10 @@ var Home = {
       ? ry - rbh / 2 - 14 - zbb / 2        // 读取按钮下方
       : startY - sbh / 2 - 18 - zbb / 2;   // 开始按钮下方
     var zxL = -(ztw / 2 + zgap + zbb / 2), zxR = -zxL;
-    mkMesh(btnTex('-', zbb, zbb, { bg: '#3a465e', fg: '#dfe8f8', border: '#4a5874', key: 'zo' }), zbb, zbb, zxL, zy, 2);
+    mkMesh(luxeBtnTex('-', zbb, zbb, { c1: '#414f6d', c2: '#2b3750', fg: '#dbe4f5', border: 'rgba(0,0,0,0.4)', key: 'zo' }), zbb, zbb, zxL, zy, 2);
     addClickable('home:zoomOut', zxL, zy, zbb, zbb, 2);
     mkTextMesh(ztxt, 0, zy, zts, '#cfd8e8', { key: 'zoom', bold: false });
-    mkMesh(btnTex('+', zbb, zbb, { bg: '#3a465e', fg: '#dfe8f8', border: '#4a5874', key: 'zi' }), zbb, zbb, zxR, zy, 2);
+    mkMesh(luxeBtnTex('+', zbb, zbb, { c1: '#414f6d', c2: '#2b3750', fg: '#dbe4f5', border: 'rgba(0,0,0,0.4)', key: 'zi' }), zbb, zbb, zxR, zy, 2);
     addClickable('home:zoomIn', zxR, zy, zbb, zbb, 2);
 
     // 底部规则文本：左侧加圆形感叹号「玩法说明」按钮，文本+按钮整体居中；
@@ -1824,7 +2097,7 @@ var Home = {
     var rx = (hd + hgap) / 2;               // 文本中心（右移）
     var hx = -(rtw + hgap) / 2;             // 按钮中心（左移）
     var rulesY = hasS ? H / 2 - H * 0.93 : H / 2 - H * 0.85;
-    mkTextMesh(rulesStr, rx, rulesY, rfs, 'rgba(255,255,255,0.55)', { key: 'rules', bold: false });
+    mkTextMesh(rulesStr, rx, rulesY, rfs, 'rgba(230,238,252,0.68)', { key: 'rules', bold: false });
     mkMesh(helpBtnTex(hd), hd, hd, hx, rulesY, 2);
     addClickable('home:help', hx, rulesY, hd, hd, 2);
     this.refresh();
@@ -1833,7 +2106,7 @@ var Home = {
     for (var i = 0; i < 3; i++) {
       var sel = (i + 2) === this.players;
       var x = this.playerBtns.x + i * (this.playerBtns.w + this.playerBtns.gap);
-      if (sel) setGlow('hp' + i, 'blue', x, this.playerBtns.y, this.playerBtns.w, this.playerBtns.h, 2.6);
+      if (sel) setGlow('hp' + i, 'gold', x, this.playerBtns.y, this.playerBtns.w, this.playerBtns.h, 2.6);
       else setGlow('hp' + i, null);
     }
   },
@@ -1927,6 +2200,10 @@ var PauseModal = {
 // 圆形感叹号按钮纹理（首页底部规则文本左侧）
 function helpBtnTex(d) {
   return makeTex('helpbtn', d, d, function (ctx, w, h) {
+    // 外圈金色微光
+    ctx.save();
+    ctx.shadowColor = 'rgba(240,201,60,0.55)';
+    ctx.shadowBlur = 10;
     var g = ctx.createRadialGradient(w * 0.35, h * 0.32, w * 0.08, w / 2, h / 2, w / 2);
     g.addColorStop(0, '#5a76a8');
     g.addColorStop(1, '#2c3a56');
@@ -1934,8 +2211,9 @@ function helpBtnTex(d) {
     ctx.arc(w / 2, h / 2, w / 2 - 1, 0, Math.PI * 2);
     ctx.fillStyle = g;
     ctx.fill();
+    ctx.restore();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = '#3d4f75';
+    ctx.strokeStyle = 'rgba(240,201,60,0.7)';
     ctx.stroke();
     text(ctx, '!', w / 2, h / 2 + 0.5, w * 0.6, '#f5d76e', 'center');
   });
@@ -3280,9 +3558,13 @@ function initApp() {
 
   R.zoom = loadZoom();   // 读取持久化缩放值（无缓存则默认 100%）
   resize();
+  showScreen('home');                       // 先构建首页，再让加载页优雅淡出（露出已就绪的场景）
   var ld = document.getElementById('loading');
-  if (ld) ld.style.display = 'none';
-  showScreen('home');
+  if (ld) {
+    ld.style.pointerEvents = 'none';
+    ld.style.opacity = '0';                 // 触发 CSS transition 淡出
+    setTimeout(function () { ld.style.display = 'none'; }, 600);
+  }
   requestAnimationFrame(animate);
 }
 
@@ -3386,6 +3668,15 @@ function playSfx(type) {
 function animate(t) {
   requestAnimationFrame(animate);
   updateGlows(t || 0);
+  // 首页氛围光斑呼吸（mesh 被 clearScene 移除后自动跳过）
+  if (Screen.current === 'home' && Home.fx) {
+    var fx = Home.fx;
+    for (var i = 0; i < fx.spots.length; i++) {
+      var s = fx.spots[i];
+      if (!s.mesh.parent) continue;
+      s.mesh.material.opacity = s.base * (0.62 + 0.38 * (0.5 + 0.5 * Math.sin(t * s.speed + s.phase)));
+    }
+  }
   FLY.update(t || 0);
   renderer.render(scene, camera);
 }
