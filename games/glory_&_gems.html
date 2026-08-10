@@ -35,7 +35,8 @@
   }
   #help-panel {
     display: flex; flex-direction: column;
-    width: 660px; max-width: 94vw; max-height: 90vh;
+    width: 660px; max-width: 94vw;
+    max-height: 82vh; max-height: 82dvh;
     background: #1d2637; border: 2px solid #3d4f75; border-radius: 14px;
     color: #dfe8f8; box-shadow: 0 12px 44px rgba(0,0,0,.55);
     overflow: hidden;
@@ -53,7 +54,7 @@
   }
   #help-close:active { background: #3a465e; }
   #help-scroll {
-    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
     padding: 14px 16px 18px; touch-action: pan-y;
     overscroll-behavior: contain;
   }
