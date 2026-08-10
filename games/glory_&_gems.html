@@ -1186,6 +1186,7 @@ FLY.card = function (card, back, from, to, w, h, opts) {
     dur: opts.dur || 540, delay: opts.delay || 0,
     arc: opts.arc !== undefined ? opts.arc : 28,
     fadeOut: opts.fadeOut !== undefined ? opts.fadeOut : false,
+    onLand: opts.onLand,
   });
 };
 
@@ -1258,6 +1259,7 @@ FLY.update = function (t) {
       if (f.mesh.parent) SceneRoot.root.remove(f.mesh);
       disposeGroup(f.mesh);
       arr.splice(i, 1);
+      if (f.opts.onLand) f.opts.onLand();   // 落地即通知（用于飞行卡与静态卡同帧交接，避免"飞到就消失"）
     }
   }
   // 全部落地：解除 busy 并执行完成回调（若有）
@@ -2636,28 +2638,32 @@ var GameScreen = {
       G._dealAnim = false;
       var Ld = this.L;
       var seq = 0;
-      var dealt = [];
       for (var t2 = 1; t2 <= 3; t2++) {
         for (var c2 = 0; c2 < 4; c2++) {
           var dealCard = tableCards(g, t2, c2);
           if (!dealCard) continue;
-          // 展示位静态卡先隐藏，避免与飞行卡叠影；全部落地后恢复
-          var dm = this.cardMeshes[t2 + ':' + c2];
+          var key2 = t2 + ':' + c2;
+          // 展示位静态卡先隐藏，避免与飞行卡叠影；飞行卡落地瞬间恢复该位静态卡，
+          // 与飞行卡终点同帧交接（位置一致，视觉无缝衔接），而不是等全部落地后一次性显示
+          var dm = this.cardMeshes[key2];
           if (dm) dm.visible = false;
-          dealt.push(t2 + ':' + c2);
           FLY.card(dealCard, false,
             { x: Ld.deckLabels[t2].x, y: Ld.deckLabels[t2].y },
             { x: Ld.cards[t2].xs[c2], y: Ld.cards[t2].rowY },
             Ld.cards[t2].w, Ld.cards[t2].h,
-            { delay: seq * 70, dur: 480, arc: 20 });
+            {
+              delay: seq * 70, dur: 480, arc: 20,
+              onLand: (function (k) {
+                return function () {
+                  var mk = GameScreen.cardMeshes[k];
+                  if (mk) mk.visible = true;
+                };
+              })(key2),
+            });
           seq++;
         }
       }
       FLY.busy = true;   // 发牌期间屏蔽输入
-      FLY._done = function () {
-        var self2 = GameScreen;
-        dealt.forEach(function (k) { var dm2 = self2.cardMeshes[k]; if (dm2) dm2.visible = true; });
-      };
     }
   },
 
