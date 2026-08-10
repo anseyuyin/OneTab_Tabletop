@@ -822,23 +822,24 @@ function drawGemChip(ctx, cx, cy, r, hex, dark, stroke) {
   ctx.fill();
 }
 
-// 中华传统菱格纹：双层菱形 + 中心圆点平铺底纹（低透明度装饰，不干扰对局内容）
-// 菱形顶点相接、隔行错位半格，形成织锦/窗棂式菱格网；密度 1.5 倍
+// 中华传统菱格纹：双层菱形 + 中心菱花平铺底纹（低透明度装饰，不干扰对局内容）
+// 菱形顶点相接、隔行错位半格，形成织锦/窗棂式菱格网
+// 精修：外菱深铜沉稳、内菱浅金提亮，一线一色形成套线层次；中心小菱花呼应主题
 function drawRhombusPattern(ctx, w, h) {
-  var cell = Math.max(60, Math.round(Math.min(w, h) * 0.13 / 1.5));   // 网格边长（密度 1.5 倍）
+  var cell = Math.max(62, Math.round(Math.min(w, h) * 0.13 / 1.5));   // 网格边长
   var hw = cell / 2, hh = cell / 2;                             // 菱形半宽 / 半高（正菱形）
   ctx.save();
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = 'rgba(215,180,110,1)';
-  ctx.strokeStyle = 'rgba(215,180,110,1)';
-  ctx.lineWidth = Math.max(1, cell * 0.014);
+  ctx.globalAlpha = 0.15;
+  ctx.lineJoin = 'miter';
   var row = 0;
   for (var gy = -cell; gy < h + cell; gy += cell, row++) {
     var col = 0;
     for (var gx = -cell; gx < w + cell; gx += cell, col++) {
       var cx2 = gx + hw + (row % 2 ? hw : 0);   // 隔行错位半格
       var cy2 = gy + hh;
-      // 外层菱形
+      // 外层菱形（深铜，略粗：沉稳的骨架）
+      ctx.strokeStyle = 'rgba(198,158,96,1)';
+      ctx.lineWidth = Math.max(1, cell * 0.015);
       ctx.beginPath();
       ctx.moveTo(cx2, cy2 - hh);
       ctx.lineTo(cx2 + hw, cy2);
@@ -846,17 +847,26 @@ function drawRhombusPattern(ctx, w, h) {
       ctx.lineTo(cx2 - hw, cy2);
       ctx.closePath();
       ctx.stroke();
-      // 内层菱形（织锦双层结构）
+      // 内层菱形（浅金，略细：精致的提亮，与外菱构成套线双菱）
+      ctx.strokeStyle = 'rgba(236,208,148,1)';
+      ctx.lineWidth = Math.max(1, cell * 0.009);
+      var s = 0.60;
       ctx.beginPath();
-      ctx.moveTo(cx2, cy2 - hh * 0.62);
-      ctx.lineTo(cx2 + hw * 0.62, cy2);
-      ctx.lineTo(cx2, cy2 + hh * 0.62);
-      ctx.lineTo(cx2 - hw * 0.62, cy2);
+      ctx.moveTo(cx2, cy2 - hh * s);
+      ctx.lineTo(cx2 + hw * s, cy2);
+      ctx.lineTo(cx2, cy2 + hh * s);
+      ctx.lineTo(cx2 - hw * s, cy2);
       ctx.closePath();
       ctx.stroke();
-      // 中心圆点（菱花之心）
+      // 中心菱花（实心小菱，呼应菱格主题，点睛之笔）
+      ctx.fillStyle = 'rgba(236,208,148,1)';
+      var nd = Math.max(1.5, cell * 0.026);
       ctx.beginPath();
-      ctx.arc(cx2, cy2, Math.max(2, cell * 0.028), 0, Math.PI * 2);
+      ctx.moveTo(cx2, cy2 - nd);
+      ctx.lineTo(cx2 + nd, cy2);
+      ctx.lineTo(cx2, cy2 + nd);
+      ctx.lineTo(cx2 - nd, cy2);
+      ctx.closePath();
       ctx.fill();
     }
   }
