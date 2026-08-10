@@ -1005,6 +1005,8 @@ var SceneRoot = {
 };
 
 function clearScene() {
+  // 飞行物先清空（否则随 root 一起销毁；保留 busy/_done 由 FLY.update 兜底触发完成回调）
+  if (typeof FLY !== 'undefined') FLY.clearFlights();
   if (SceneRoot.root) {
     R.scene.remove(SceneRoot.root);
     disposeGroup(SceneRoot.root);
@@ -1120,6 +1122,162 @@ function gemPileGroup(key, colorKey, x, y, size, z) {
   var numMesh = mkTextMesh('', x, y + size * 0.02, Math.max(9, size * 0.34), '#ffffff', { key: 'n' + key, stroke: 'rgba(0,0,0,0.55)' });
   return { mesh: m, num: numMesh, key: key };
 }
+
+// ============================================================
+// 飞行动画系统：物件（宝石/卡牌/黄金/分数文字）从起点飞到终点，
+// 使用缓动函数（非线性）+ 弧线路径；全部落地后执行完成回调。
+// 关键约定：动作的状态变更（分数/宝石/卡牌计数）必须等动画完成后再进行，
+// 由调用方在 FLY._done 回调中执行（见 playActionAnimated）。
+// ============================================================
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
+
+var FLY = {
+  busy: false,        // true = 有飞行动画播放中（屏蔽输入）
+  _flights: [],       // 正在飞行的物件
+  _done: null,        // 全部落地后的回调（可空：开局发牌等无状态变更的动画）
+  _nextZ: 8,          // 飞行物层级（高于面板/卡牌/操作栏）
+};
+
+// 创建飞行物网格（加入场景根；由 clearFlights/落地时销毁）
+function flyMesh(tex, w, h, x, y, z) {
+  var geo = new THREE.PlaneGeometry(w, h);
+  var mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02 });
+  var mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, z);
+  SceneRoot.root.add(mesh);
+  return mesh;
+}
+
+// 通用飞行：opts = { tex, w, h, from:{x,y}, to:{x,y}, dur, delay, ease, arc, fromScale, toScale, fadeOut }
+FLY.spawn = function (opts) {
+  opts.fromScale = opts.fromScale || 1;
+  opts.toScale = opts.toScale || 1;
+  opts.dur = opts.dur || 520;
+  opts.delay = opts.delay || 0;
+  opts.ease = opts.ease || easeOutCubic;
+  opts.arc = opts.arc || 0;
+  var z = opts.z === undefined ? FLY._nextZ : opts.z;
+  var mesh = flyMesh(opts.tex, opts.w, opts.h, opts.from.x, opts.from.y, z);
+  mesh.scale.set(opts.fromScale, opts.fromScale, 1);
+  FLY._flights.push({ opts: opts, mesh: mesh, t0: 0, started: false, z: z });
+};
+
+// 宝石/黄金飞行（size = 起点筹码直径；默认终点缩小到 55%）
+FLY.gem = function (colorKey, from, to, size, opts) {
+  opts = opts || {};
+  FLY.spawn({
+    tex: gemTex(colorKey, size), w: size, h: size, from: from, to: to,
+    dur: opts.dur || 460, delay: opts.delay || 0,
+    fromScale: 1, toScale: opts.toScale !== undefined ? opts.toScale : 0.55,
+    arc: opts.arc !== undefined ? opts.arc : 26,
+    fadeOut: true,
+  });
+};
+
+// 卡牌飞行（back=true 用卡背，用于盲保留的未知牌）
+FLY.card = function (card, back, from, to, w, h, opts) {
+  opts = opts || {};
+  var tex = back ? cardBackTex(card.tier, w, h) : cardTex(card, w, h);
+  FLY.spawn({
+    tex: tex, w: w, h: h, from: from, to: to,
+    fromScale: opts.fromScale !== undefined ? opts.fromScale : 1,
+    toScale: opts.toScale !== undefined ? opts.toScale : 1,
+    dur: opts.dur || 540, delay: opts.delay || 0,
+    arc: opts.arc !== undefined ? opts.arc : 28,
+    fadeOut: opts.fadeOut !== undefined ? opts.fadeOut : false,
+  });
+};
+
+// 分数文字飞行（+N，如贵族 +3）；supersample 超采样绘制，放大阶段依然清晰
+FLY.text = function (str, from, to, size, color, opts) {
+  opts = opts || {};
+  var ss2 = opts.supersample || 3;
+  var w = (str.length * size + size) * 1.1, h = size * 1.6;
+  var tex = makeTex('flytxt' + str + (opts.key || '') + (color || ''), w * ss2, h * ss2, function (ctx, W, H) {
+    text(ctx, str, W / 2, H / 2 + 1, size * ss2, color || '#ffd94d', 'center', true, 'rgba(0,0,0,0.5)');
+  });
+  FLY.spawn({
+    tex: tex, w: w, h: h, from: from, to: to,
+    fromScale: opts.fromScale !== undefined ? opts.fromScale : 0.6,
+    toScale: opts.toScale !== undefined ? opts.toScale : 1.4,
+    dur: opts.dur || 700, delay: opts.delay || 0,
+    arc: opts.arc || 0, fadeOut: true,
+  });
+};
+
+// 数字脉动动画：原地显示数字并做缩放脉冲（峰值 peak>1 增大、peak<1 减小），
+// 缩放曲线 = 1 + (peak-1)*sin(π·t)，缓入缓出的非线性节奏，结束时回到 1 倍融入原数字。
+// supersample 超采样绘制：放大到 1.5 倍仍清晰不模糊。
+FLY.pulse = function (str, pos, size, color, opts) {
+  opts = opts || {};
+  var peak = opts.peak !== undefined ? opts.peak : 1.5;
+  var ss2 = opts.supersample || 3;
+  var w = (str.length * size + size) * 1.1, h = size * 1.6;
+  var tex = makeTex('flypulse' + str + (opts.key || '') + (color || ''), w * ss2, h * ss2, function (ctx, W, H) {
+    text(ctx, str, W / 2, H / 2 + 1, size * ss2, color || '#ffffff', 'center', true, 'rgba(0,0,0,0.5)');
+  });
+  var z = opts.z === undefined ? 8.5 : opts.z;
+  var mesh = flyMesh(tex, w, h, pos.x, pos.y, z);
+  mesh.scale.set(1, 1, 1);
+  if (opts.rot) mesh.rotation.z = opts.rot;   // 跟随玩家面板方向（顶/左/右面板内容旋转）
+  FLY._flights.push({ pulse: true, mesh: mesh, t0: 0, started: false, opts: { dur: opts.dur || 240, delay: opts.delay || 0 }, peak: peak, z: z });
+};
+
+// 每帧更新（由 animate 调用）：推进位置/缩放/透明度，落地销毁并触发完成回调
+FLY.update = function (t) {
+  var arr = FLY._flights;
+  for (var i = arr.length - 1; i >= 0; i--) {
+    var f = arr[i];
+    if (!f.started) { f.t0 = t; f.started = true; }
+    var el = t - f.t0;
+    if (el < f.opts.delay) continue;   // 尚未起飞
+    if (f.pulse) {
+      // 数字脉动：缩放 1 → peak → 1（正弦缓动，非线性节奏）
+      var pp = Math.min(1, Math.max(0, (el - f.opts.delay) / f.opts.dur));
+      var ps = 1 + (f.peak - 1) * Math.sin(Math.PI * pp);
+      f.mesh.scale.set(ps, ps, 1);
+      if (pp >= 1) {
+        if (f.mesh.parent) SceneRoot.root.remove(f.mesh);
+        disposeGroup(f.mesh);
+        arr.splice(i, 1);
+      }
+      continue;
+    }
+    var p = Math.min(1, Math.max(0, (el - f.opts.delay) / f.opts.dur));
+    var e = f.opts.ease(p);
+    var o = f.opts;
+    var x = o.from.x + (o.to.x - o.from.x) * e;
+    var y = o.from.y + (o.to.y - o.from.y) * e;
+    if (o.arc) y += o.arc * Math.sin(Math.PI * p);   // 弧线：中途抬高
+    f.mesh.position.set(x, y, f.z);
+    var s = o.fromScale + (o.toScale - o.fromScale) * e;
+    f.mesh.scale.set(s, s, 1);
+    if (o.fadeOut && p > 0.72) f.mesh.material.opacity = Math.max(0, 1 - (p - 0.72) / 0.28);
+    if (p >= 1) {
+      if (f.mesh.parent) SceneRoot.root.remove(f.mesh);
+      disposeGroup(f.mesh);
+      arr.splice(i, 1);
+    }
+  }
+  // 全部落地：解除 busy 并执行完成回调（若有）
+  if (FLY.busy && !arr.length) {
+    var d = FLY._done;
+    FLY._done = null;
+    FLY.busy = false;
+    if (d) d();
+  }
+};
+
+// 清空飞行物（场景重建时调用：保留 busy/_done，由 update 兜底触发完成回调）
+FLY.clearFlights = function () {
+  var arr = FLY._flights;
+  for (var i = 0; i < arr.length; i++) {
+    if (arr[i].mesh.parent) SceneRoot.root.remove(arr[i].mesh);
+    disposeGroup(arr[i].mesh);
+  }
+  arr.length = 0;
+};
 
 </script>
 
@@ -1309,6 +1467,68 @@ function panelLocalToWorld(area, pos, lx, ly, w, h) {
   else if (rot < 0) { wx = area.x + ly; wy = area.y - lx; ww = h; wh = w; }
   else { wx = area.x - ly; wy = area.y + lx; ww = h; wh = w; }
   return { x: wx, y: wy, w: ww, h: wh };
+}
+
+// 面板内容坐标（drawPanelContent 使用的画布坐标系：原点左上、x 右、y 下）→ 世界坐标
+// 与 buildPanel 中保留牌 rcCards 的转换公式一致（横/竖面板纹理内旋转均覆盖）
+function panelContentToWorld(area, pos, cx, cy) {
+  if (pos === 0) return { x: area.x + cx - area.w / 2, y: area.y + area.h / 2 - cy };
+  if (pos === 1) return { x: area.x - cx + area.w / 2, y: area.y - area.h / 2 + cy };
+  if (pos === 2) return { x: area.x + area.w / 2 - cy, y: area.y + area.h / 2 - cx };
+  return { x: area.x + cy - area.w / 2, y: area.y + cx - area.h / 2 };
+}
+
+// 面板内容布局（复制 drawPanelContent 的坐标推导，供飞行动画计算目标点，避免改动绘制代码）
+// p 用于布局推导（仅依赖 p.reserved 数量）；CW/CH 与 drawPanelContent 调用一致（竖面板 CW=area.h, CH=area.w）
+// 返回内容坐标系坐标：{ score:{x,y}, slots:[5], gold:{x,y}, resv:[{x,y,w,h}...], slotSize, resvSize:{w,h} }
+function panelContentLayout(p, CW, CH) {
+  var pad = Math.max(5, CH * 0.07);
+  var midY = CH * 0.52;
+  var db = CH * 0.30 * 0.7;                     // 分数菱形（与 drawPanelContent 一致）
+  var bcx = pad + db * 0.95, bcy = CH * 0.36;
+  var scr = CH * 0.27 * 0.6;                    // 资源总数圆
+  var ccx = bcx + db * 0.9 + scr + 5, ccy = midY;
+  var reserved = p.reserved || [];
+  var showN = Math.min(3, reserved.length);
+  var gr = Math.min(CH * 0.2, 14);              // 黄金圆半径
+  var x0 = ccx + scr + 6;
+  var minRight = x0 + 5 * (18 + 18 * 0.14) + gr * 2 + 2;
+  var availW = Math.max(0, CW - pad - 4 - minRight);
+  var rw = Math.min(CH * 0.9 / 1.42, 62);
+  if (showN) rw = Math.min(rw, availW / (1 + 0.62 * (showN - 1)));
+  rw = Math.max(16, Math.round(rw));
+  var rh = Math.round(rw * 1.42);
+  var step = rw * 0.62;
+  var resvW = showN ? (rw + (showN - 1) * step) : 4;
+  var xEnd = CW - pad - resvW - 4;
+  var ss = Math.min(CH * 0.54, (xEnd - x0 - (gr * 2 + 8)) / 5.7);
+  ss = Math.max(18, ss);
+  var sgap = ss * 0.14;
+  var slots = [];
+  var badges = [];
+  for (var i = 0; i < 5; i++) {
+    var scxi = x0 + i * (ss + sgap) + ss / 2;
+    slots.push({ x: scxi, y: midY });
+    // 宝石数角标中心（drawPanelContent：ocx = scx + ss*0.3, ocy = midY + ss*0.34）
+    badges.push({ x: scxi + ss * 0.3, y: midY + ss * 0.34 });
+  }
+  var gcx = x0 + 5 * (ss + sgap) + gr + 2;
+  var resv = [];
+  for (var ri = 0; ri < showN; ri++) {
+    var bx2 = CW - pad - 2 - rw - (showN - 1 - ri) * step;
+    resv.push({ x: bx2 + rw / 2, y: midY, w: rw, h: rh });
+  }
+  return {
+    score: { x: bcx, y: bcy },
+    // 资源总数圆文字中心（drawPanelContent：ccx - scr*0.32, ccy - scr*0.32）
+    totalCircle: { x: ccx - scr * 0.32, y: ccy - scr * 0.32 },
+    slots: slots,        // 槽位主数字中心（实际文字中心 = scx - ss*0.08, midY - ss*0.12，调用处处理）
+    badges: badges,
+    gold: { x: gcx, y: midY },
+    resv: resv,
+    slotSize: ss,
+    resvSize: { w: rw, h: rh },
+  };
 }
 
 // 操作栏局部坐标（中心为原点，右=x+、上=y+，含旋转角）→ 世界坐标（宽高不变，旋转由命中测试/网格处理）
@@ -2106,6 +2326,219 @@ function mkMeshIn(tex, w, h, x, y, z, group) {
 }
 
 // ============================================================
+// 动作动画编排：收集 UI 选择 → 播放物件飞行动画 → 动画落地后执行状态变更
+// 状态变更（宝石/黄金/发展卡计数、分数）严格放在动画完成回调中执行，
+// 保证「相关分数/计数变化等飞到动画完成后才改变」。
+// ============================================================
+
+// 收集当前 UI 选择为动作描述（不改变游戏状态）
+function collectAction(g) {
+  var p = g.players[g.current];
+  var key = UI.selected[0];
+  var parts = key.split(':');
+  switch (UI.mode) {
+    case 'take3':
+      return { type: 'take3', cols: UI.selected.map(function (k) { return k.split(':')[1]; }) };
+    case 'take2':
+      return { type: 'take2', col: parts[1] };
+    case 'buy': {
+      var card, fromReserved = false, tier = -1, col = -1;
+      if (parts[0] === 'card') { tier = +parts[1]; col = +parts[2]; card = tableCards(g, tier, col); }
+      else { var rc = p.reserved.find(function (r) { return r.card.uid === +parts[1]; }); card = rc.card; fromReserved = true; }
+      return { type: 'buy', card: card, fromReserved: fromReserved, tier: tier, col: col };
+    }
+    case 'reserve': {
+      var fromDraw = parts[0] === 'deck';
+      return { type: 'reserve', tier: +parts[1], col: fromDraw ? 0 : +parts[2], fromDraw: fromDraw };
+    }
+  }
+  return null;
+}
+
+// 播放动作动画（含补牌飞行）；done 在全部动画落地后执行（状态变更 + 回合流转）
+function playActionAnimated(g, info, done) {
+  var L = GameScreen.L || computeLayout();
+  var p = g.players[g.current];
+  var pos = panelForPlayer(g.nPlayers, g.current);
+  var area = L.panel[panelKey(pos)];
+  var isHoriz = pos === 0 || pos === 1;
+  var CW = isHoriz ? area.w : area.h;   // 与 buildPanel/drawPanelContent 一致（竖面板内容横竖互换）
+  var CH = isHoriz ? area.h : area.w;
+  var lay = panelContentLayout(p, CW, CH);
+  var layT = lay;
+  if (info.type === 'reserve') {
+    // 保留后保留牌区变宽，目标坐标按「保留后状态」推导（新牌落在最右完整可见位）
+    layT = panelContentLayout({ reserved: p.reserved.concat([{ card: { uid: 0 } }]) }, CW, CH);
+  }
+  var toW = function (pt) { return panelContentToWorld(area, pos, pt.x, pt.y); };
+  var deckPos = function (tier) { return { x: L.deckLabels[tier].x, y: L.deckLabels[tier].y }; };
+  var showPos = function (tier, col) { return { x: L.cards[tier].xs[col], y: L.cards[tier].rowY }; };
+  var bankPos = function (colorKey) {
+    var keys = COLORS.concat(['Y']);
+    return { x: L.gems.x, y: L.gems.ys[keys.indexOf(colorKey)] };
+  };
+
+  switch (info.type) {
+    // 拿 3 色 / 拿 2 个：各色宝石从银行对应资源堆飞向面板对应资源槽
+    case 'take3':
+      info.cols.forEach(function (c, i) {
+        FLY.gem(c, bankPos(c), toW(lay.slots[COLORS.indexOf(c)]), L.gems.size, { delay: i * 90, dur: 440 });
+      });
+      break;
+    case 'take2':
+      FLY.gem(info.col, bankPos(info.col), toW(lay.slots[COLORS.indexOf(info.col)]), L.gems.size, { delay: 0, dur: 440 });
+      FLY.gem(info.col, bankPos(info.col), toW(lay.slots[COLORS.indexOf(info.col)]), L.gems.size, { delay: 110, dur: 440 });
+      break;
+    // 购买：发展卡飞向面板该色发展计数槽；非保留购买时牌堆补一张飞向空展示位
+    case 'buy': {
+      var tier = info.card.tier;
+      var slot = lay.slots[COLORS.indexOf(info.card.provide)];
+      var from;
+      if (info.fromReserved) {
+        var spot = GameScreen.resvSpots[info.card.uid];
+        from = spot ? { x: spot.x, y: spot.y } : showPos(tier, info.col);
+      } else {
+        from = showPos(tier, info.col);
+        var mk0 = GameScreen.cardMeshes[tier + ':' + info.col];
+        if (mk0) mk0.visible = false;   // 原地卡先隐藏，避免与飞行分身叠影
+      }
+      FLY.card(info.card, false, from, toW(slot), L.cards[tier].w, L.cards[tier].h, { toScale: 0.5, fadeOut: true, dur: 560 });
+      if (!info.fromReserved && g.draw[tier] && g.draw[tier].length) {
+        var nc = g.draw[tier][g.draw[tier].length - 1];   // 牌库顶（仅预览，状态变更时才真正弹出）
+        FLY.card(nc, false, deckPos(tier), showPos(tier, info.col), L.cards[tier].w, L.cards[tier].h, { delay: 170, dur: 500, arc: 18 });
+      }
+      break;
+    }
+    // 保留：牌飞向面板保留区新位；黄金从银行飞向面板黄金位；展示保留时牌堆补一张
+    case 'reserve': {
+      var tier2 = info.tier;
+      var resvT = layT.resv[layT.resv.length - 1];
+      var from2 = info.fromDraw ? deckPos(tier2) : showPos(tier2, info.col);
+      var rs = layT.resvSize;
+      if (!info.fromDraw) {
+        var mk1 = GameScreen.cardMeshes[tier2 + ':' + info.col];
+        if (mk1) mk1.visible = false;
+      }
+      // 展示保留传真实卡（牌面飞行）；盲保留传占位（卡背飞行）
+      var resvCard = info.fromDraw ? { tier: tier2 } : tableCards(g, tier2, info.col);
+      FLY.card(resvCard, info.fromDraw, from2, toW(resvT), rs.w, rs.h, { dur: 560, arc: 26 });
+      FLY.gem('Y', bankPos('Y'), toW(layT.gold), L.gems.size, { delay: 120, dur: 460 });
+      if (!info.fromDraw && g.draw[tier2] && g.draw[tier2].length) {
+        var nc2 = g.draw[tier2][g.draw[tier2].length - 1];
+        FLY.card(nc2, false, deckPos(tier2), showPos(tier2, info.col), L.cards[tier2].w, L.cards[tier2].h, { delay: 260, dur: 500, arc: 16 });
+      }
+      break;
+    }
+  }
+  FLY.busy = true;
+  FLY._done = done;
+}
+
+// 贵族分数飞行动画：+3 从贵族卡位置飞向当前玩家面板分数位，落地后执行 done
+function playNobleScoreAnim(g, nobleIdx, done) {
+  var L = GameScreen.L || computeLayout();
+  var p = g.players[g.current];
+  var pos = panelForPlayer(g.nPlayers, g.current);
+  var area = L.panel[panelKey(pos)];
+  var isHoriz = pos === 0 || pos === 1;
+  var lay = panelContentLayout(p, isHoriz ? area.w : area.h, isHoriz ? area.h : area.w);
+  var scoreW = panelContentToWorld(area, pos, lay.score.x, lay.score.y);
+  var nPos = { x: L.nobles.x, y: L.nobles.ys[nobleIdx] };
+  FLY.text('+3', nPos, scoreW, Math.min(26, Math.max(16, L.nobles.h * 0.9)), '#ffd94d', { dur: 720 });
+  FLY.busy = true;
+  FLY._done = done;
+}
+
+// 结束回合（动画版）：自动贵族（仅满足 1 张）先播分数动画、落地后再结算分数与流转；
+// 同时满足多位贵族进入手动选择阶段；否则直接流转。done 在回合流转完成后调用。
+function playEndTurnAnimated(g, done) {
+  var p = g.players[g.current];
+  var elig = eligibleNobles(g, p);
+  if (elig.length === 1) {
+    playNobleScoreAnim(g, elig[0], function () {
+      awardNoble(g, p, elig[0]);     // 分数动画落地后才加 3 分
+      finishTurnCore(g);
+      done();
+    });
+  } else if (elig.length >= 2) {
+    g.phase = 'noble-choice';
+    g.nobleChoices = elig;
+    done();                          // 等待玩家手动选择（选择确认走 playNobleScoreAnim）
+  } else {
+    finishTurnCore(g);
+    done();
+  }
+}
+
+// 数值快照（动作执行前）：记录操作玩家与银行的关键数值，用于动作后对比生成数字脉冲
+function snapshotNumbers(g) {
+  var pi = g.current;
+  var p = g.players[pi];
+  var snap = { pi: pi, score: p.score, gold: p.gold, total: playerGemTotal(p), cards: {}, gems: {}, bank: {}, goldBank: g.gold };
+  for (var i = 0; i < 5; i++) {
+    var c = COLORS[i];
+    snap.cards[c] = p.cards[c];
+    snap.gems[c] = p.gems[c];
+    snap.bank[c] = g.bank[c];
+  }
+  return snap;
+}
+
+// 数值变化脉冲：对比快照与当前值，在对应数字位置叠加缩放动画（增 1→1.5→1 / 减 1→0.75→1）
+// 须在 showScreen('game') 重建完成后调用（此时面板已显示新值，脉冲叠在数字上弹跳）
+function playNumberPulses(g, snap) {
+  if (!snap || g.phase === 'end' || !GameScreen.L) return;
+  var p = g.players[snap.pi];
+  var L = GameScreen.L;
+  var pos = panelForPlayer(g.nPlayers, snap.pi);
+  var area = L.panel[panelKey(pos)];
+  var isHoriz = pos === 0 || pos === 1;
+  var CW = isHoriz ? area.w : area.h, CH = isHoriz ? area.h : area.w;
+  var lay = panelContentLayout(p, CW, CH);
+  var toW = function (pt) { return panelContentToWorld(area, pos, pt.x, pt.y); };
+  // 玩家面板内容方向：底 0°、顶 180°、左 -90°（顺时针，内容顶部朝右）、右 +90°（逆时针，顶部朝左）
+  // 与 barLocalToWorld 操作栏旋转约定一致（pos 2 → -π/2、pos 3 → +π/2）
+  var rot = pos === 0 ? 0 : pos === 1 ? Math.PI : pos === 2 ? -Math.PI / 2 : Math.PI / 2;
+  var events = [], delay = 0;
+  function pushNum(pt, str, size, color, peak, rotv) {
+    events.push({ x: pt.x, y: pt.y, str: '' + str, size: size, color: color, peak: peak, delay: delay, rot: rotv === undefined ? 0 : rotv });
+    delay += 30;   // 多数字依次脉动（短间隔，整体节奏快）
+  }
+  // 面板：分数菱形（文字中心 = 菱形中心，size = db*0.8 ≈ CH*0.168）
+  if (p.score !== snap.score) {
+    pushNum(toW(lay.score), p.score, CH * 0.168, '#ffffff', p.score > snap.score ? 1.5 : 0.75, rot);
+  }
+  // 面板：5 色槽位主数字（发展卡数，内容坐标中心 = scx-ss*0.08, midY-ss*0.12）+ 角标（宝石数）
+  var ss = lay.slotSize;
+  for (var i = 0; i < 5; i++) {
+    var c = COLORS[i];
+    if (p.cards[c] !== snap.cards[c]) {
+      // 偏移在内容坐标系内计算后再转世界（横面板 y 轴方向与世界相反，直接在世界坐标减会偏）
+      var main = toW({ x: lay.slots[i].x - ss * 0.08, y: lay.slots[i].y - ss * 0.12 });
+      pushNum({ x: main.x, y: main.y }, p.cards[c], ss * 0.44, COLOR_INFO[c].onChip, p.cards[c] > snap.cards[c] ? 1.5 : 0.75, rot);
+    }
+    if (p.gems[c] !== snap.gems[c]) {
+      pushNum(toW(lay.badges[i]), p.gems[c], ss * 0.236, '#3c4048', p.gems[c] > snap.gems[c] ? 1.5 : 0.75, rot);
+    }
+  }
+  // 面板：黄金（size = gr*0.95）
+  if (p.gold !== snap.gold) {
+    var gr = Math.min(CH * 0.2, 14);
+    pushNum(toW(lay.gold), p.gold, gr * 0.95, GOLD_INFO.onChip, p.gold > snap.gold ? 1.5 : 0.75, rot);
+  }
+  // 面板：资源总数圆（中心 totalCircle，size = scr*0.64）
+  var total = playerGemTotal(p);
+  if (total !== snap.total) {
+    var scr = CH * 0.27 * 0.6;
+    pushNum(toW(lay.totalCircle), total, scr * 0.64, '#3c4048', total > snap.total ? 1.5 : 0.75, rot);
+  }
+  // 注：银行资源堆数字脉冲已在 playActionAnimated 中与飞行动画同步播放，此处不重复
+  events.forEach(function (ev) {
+    FLY.pulse(ev.str, { x: ev.x, y: ev.y }, ev.size, ev.color, { peak: ev.peak, delay: ev.delay, dur: 220, rot: ev.rot });
+  });
+}
+
+// ============================================================
 // 游戏场景
 // ============================================================
 var GameScreen = {
@@ -2197,6 +2630,35 @@ var GameScreen = {
     for (var pi = 0; pi < g.nPlayers; pi++) this.buildPanel(pi);
 
     this.refresh();
+
+    // 开局发牌：12 张展示卡从各级牌堆依次飞向展示位（仅新对局触发一次，rebuild 不重复）
+    if (G._dealAnim) {
+      G._dealAnim = false;
+      var Ld = this.L;
+      var seq = 0;
+      var dealt = [];
+      for (var t2 = 1; t2 <= 3; t2++) {
+        for (var c2 = 0; c2 < 4; c2++) {
+          var dealCard = tableCards(g, t2, c2);
+          if (!dealCard) continue;
+          // 展示位静态卡先隐藏，避免与飞行卡叠影；全部落地后恢复
+          var dm = this.cardMeshes[t2 + ':' + c2];
+          if (dm) dm.visible = false;
+          dealt.push(t2 + ':' + c2);
+          FLY.card(dealCard, false,
+            { x: Ld.deckLabels[t2].x, y: Ld.deckLabels[t2].y },
+            { x: Ld.cards[t2].xs[c2], y: Ld.cards[t2].rowY },
+            Ld.cards[t2].w, Ld.cards[t2].h,
+            { delay: seq * 70, dur: 480, arc: 20 });
+          seq++;
+        }
+      }
+      FLY.busy = true;   // 发牌期间屏蔽输入
+      FLY._done = function () {
+        var self2 = GameScreen;
+        dealt.forEach(function (k) { var dm2 = self2.cardMeshes[k]; if (dm2) dm2.visible = true; });
+      };
+    }
   },
 
   buildPanel: function (pi) {
@@ -2461,6 +2923,7 @@ var GameScreen = {
   onTap: function (key) {
     var g = G.game;
     if (!g || g.phase === 'end') return;
+    if (FLY.busy) return;   // 飞行动画播放中：屏蔽所有输入，避免动画期间误操作
     // 暂停按钮
     if (key === 'pause') {
       uiReset();
@@ -2492,11 +2955,19 @@ var GameScreen = {
           this.refresh();
         }
       } else if (key === 'exec') {
-        if (uiConfirmNoble(g)) {
-          playSfx('buy');
+        // 贵族确认：+3 分数从贵族卡飞向当前玩家面板分数位，落地后才结算分数
+        if (UI.pickNoble === null) { playSfx('err'); return; }
+        playSfx('buy');
+        var nIdx = g.nobleChoices[UI.pickNoble];
+        playNobleScoreAnim(g, nIdx, function () {
+          var snapN = snapshotNumbers(g);   // 贵族结算前快照（+3 前）
+          uiConfirmNoble(g);
           if (g.phase === 'end') showScreen('end');
-          else showScreen('game');   // 重建：操作栏跟随新回合玩家座位
-        } else playSfx('err');
+          else {
+            showScreen('game');   // 重建：操作栏跟随新回合玩家座位
+            playNumberPulses(g, snapN);   // 分数 +3 的数字脉动
+          }
+        });
       }
       return;
     }
@@ -2520,12 +2991,29 @@ var GameScreen = {
         else showScreen('game');   // 重建：操作栏跟随新回合玩家座位
         return;
       }
-      var r = uiExecute(g);
-      if (r.ok) {
-        playSfx('buy');
-        if (g.phase === 'end') showScreen('end');
-        else showScreen('game');   // 重建：操作栏跟随新回合玩家座位
-      } else playSfx('err');
+      // 正常执行：先播飞行动画，全部落地后再更新状态（宝石/黄金/发展卡/分数）与回合流转
+      var info = collectAction(g);
+      if (!info) { playSfx('err'); return; }
+      playSfx('buy');
+      playActionAnimated(g, info, function () {
+        var snap = snapshotNumbers(g);   // 动作执行前快照（用于数字脉动对比）
+        var p3 = g.players[g.current];
+        switch (info.type) {
+          case 'take3': execTakeThree(g, p3, info.cols); break;
+          case 'take2': execTakeTwo(g, p3, info.col); break;
+          case 'buy': execBuy(g, p3, info.card, info.fromReserved); break;
+          case 'reserve': execReserve(g, p3, info.tier, info.col, info.fromDraw); break;
+        }
+        uiReset();
+        // 回合流转（含自动贵族结算动画：只满足 1 张贵族时 +3 先飞向面板再改分数）
+        playEndTurnAnimated(g, function () {
+          if (g.phase === 'end') showScreen('end');
+          else {
+            showScreen('game');   // 重建：操作栏跟随新回合玩家座位
+            playNumberPulses(g, snap);   // 数值变化（增/减）的数字脉动动画
+          }
+        });
+      });
       return;
     }
     if (key.indexOf('gem:') === 0 || key.indexOf('card:') === 0 || key.indexOf('deck:') === 0) {
@@ -2595,6 +3083,7 @@ function startGame(n) {
   G.game.current = Math.floor(Math.random() * n);
   G.game.firstPlayer = G.game.current;
   G.game.turnCount = 0;
+  G._dealAnim = true;   // 开局发牌动画标志（build 末尾消费）
   showScreen('game');
 }
 
@@ -2796,6 +3285,7 @@ function rebuildScreen() {
 }
 
 function dispatchTap(wx, wy) {
+  if (FLY.busy) return;   // 飞行动画播放中：屏蔽输入
   if (PauseModal.visible) {
     var pkey = hitTest(wx, wy);
     if (pkey && pkey.indexOf('pause:') === 0) PauseModal.onTap(pkey);
@@ -2838,6 +3328,7 @@ function playSfx(type) {
 function animate(t) {
   requestAnimationFrame(animate);
   updateGlows(t || 0);
+  FLY.update(t || 0);
   renderer.render(scene, camera);
 }
 
