@@ -59,13 +59,13 @@
   @keyframes barSlide { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
 
   /* ===== 玩法说明弹窗（DOM 模态：自适应窗口 + 内容纵向滚动） ===== */
-  #help-overlay {
+  #help-overlay, #record-overlay {
     position: fixed; inset: 0; z-index: 9999;
     display: flex; align-items: center; justify-content: center;
     background: rgba(5,8,14,0.72);
     font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
   }
-  #help-panel {
+  #help-panel, #record-panel {
     display: flex; flex-direction: column;
     width: 660px; max-width: 94vw;
     max-height: 82vh; max-height: 82dvh;
@@ -73,26 +73,26 @@
     color: #dfe8f8; box-shadow: 0 12px 44px rgba(0,0,0,.55);
     overflow: hidden;
   }
-  #help-head {
+  #help-head, #record-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: 12px 16px 10px; border-bottom: 1px solid rgba(61,79,117,.6);
     flex-shrink: 0;
   }
-  #help-head .t { font-size: 17px; font-weight: bold; color: #f5d76e; letter-spacing: 3px; }
-  #help-close {
+  #help-head .t, #record-head .t { font-size: 17px; font-weight: bold; color: #f5d76e; letter-spacing: 3px; }
+  #help-close, #record-close {
     width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
     background: #2c3a56; border: 1.5px solid #3d4f75; color: #cfd8e8;
     font-size: 14px; line-height: 1; padding: 0; flex-shrink: 0;
   }
-  #help-close:active { background: #3a465e; }
-  #help-scroll {
+  #help-close:active, #record-close:active { background: #3a465e; }
+  #help-scroll, #record-scroll {
     flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
     padding: 14px 16px 18px; touch-action: pan-y;
     overscroll-behavior: contain;
   }
-  #help-scroll::-webkit-scrollbar { width: 8px; }
-  #help-scroll::-webkit-scrollbar-thumb { background: #3d4f75; border-radius: 4px; }
-  #help-scroll::-webkit-scrollbar-track { background: transparent; }
+  #help-scroll::-webkit-scrollbar, #record-scroll::-webkit-scrollbar { width: 8px; }
+  #help-scroll::-webkit-scrollbar-thumb, #record-scroll::-webkit-scrollbar-thumb { background: #3d4f75; border-radius: 4px; }
+  #help-scroll::-webkit-scrollbar-track, #record-scroll::-webkit-scrollbar-track { background: transparent; }
   .help-sec { margin-bottom: 18px; }
   .help-sec h3 {
     margin: 0 0 10px; font-size: 15px; color: #f5d76e; font-weight: bold;
@@ -122,14 +122,55 @@
   .help-rules ul { margin: 2px 0 0; padding-left: 18px; }
   .help-rules li { margin-bottom: 5px; }
   .help-rules b { color: #f5d76e; }
-  #help-foot { flex-shrink: 0; padding: 12px 16px 16px; text-align: center; border-top: 1px solid rgba(61,79,117,.6); }
-  #help-gotit {
+  #help-foot, #record-foot { flex-shrink: 0; padding: 12px 16px 16px; text-align: center; border-top: 1px solid rgba(61,79,117,.6); }
+  #help-gotit, #record-gotit {
     padding: 9px 36px; border-radius: 20px; border: none; cursor: pointer;
     background: linear-gradient(180deg, #5f9ef0, #2a56a8);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 3px 10px rgba(0,0,0,0.35);
     color: #fff; font-size: 14px; letter-spacing: 4px;
   }
-  #help-gotit:active { background: linear-gradient(180deg, #2c5588, #1d3a66); }
+  #help-gotit:active, #record-gotit:active { background: linear-gradient(180deg, #2c5588, #1d3a66); }
+
+  /* ===== 对局记录弹窗：记录列表样式 ===== */
+  #record-panel {
+    max-height: 82vh; max-height: 82dvh;   /* 与玩法说明弹窗严格一致：最大高度限制 */
+  }
+  #record-scroll {
+    overflow-y: auto;                      /* 记录多时出现纵向滑动条 */
+    scrollbar-width: thin;
+    scrollbar-color: #5a6f96 rgba(255,255,255,0.05);
+  }
+  #record-scroll::-webkit-scrollbar { width: 10px; }
+  #record-scroll::-webkit-scrollbar-thumb { background: #5a6f96; border-radius: 5px; border: 2px solid #1d2637; }
+  #record-scroll::-webkit-scrollbar-thumb:hover { background: #6b82a8; }
+  #record-scroll::-webkit-scrollbar-track { background: rgba(255,255,255,0.04); }
+  #record-clear {
+    padding: 8px 20px; border-radius: 18px; cursor: pointer;
+    border: 1.5px solid #8a4a4a;
+    background: linear-gradient(180deg, #5a3030, #3a1f22); color: #f2b8b8;
+    font-size: 13px; letter-spacing: 2px; margin-right: 12px;
+  }
+  #record-clear:active { background: linear-gradient(180deg, #462626, #2c1818); }
+  .rec-empty { text-align: center; color: rgba(223,232,248,.6); font-size: 14px; padding: 30px 0; letter-spacing: 2px; }
+  .rec-card {
+    background: #26324a; border: 1px solid #3d4f75; border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 10px;
+  }
+  .rec-head {
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px 12px;
+    font-size: 12px; color: rgba(223,232,248,.75); margin-bottom: 8px;
+    border-bottom: 1px dashed rgba(61,79,117,.6); padding-bottom: 6px;
+  }
+  .rec-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 5px 8px; border-radius: 7px; font-size: 13px; color: #dfe8f8;
+  }
+  .rec-row.rec-win { background: rgba(245,215,110,0.16); border: 1px solid rgba(245,215,110,0.5); color: #f5d76e; font-weight: bold; }
+  .rec-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px rgba(255,255,255,0.25); }
+  .rec-name { flex: 1 1 auto; min-width: 0; }
+  .rec-num { flex-shrink: 0; font-size: 12px; color: rgba(223,232,248,.8); }
+  .rec-win .rec-num { color: #f5d76e; }
+  .rec-star { flex-shrink: 0; color: #f5d76e; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -370,6 +411,7 @@ function newGame(nPlayers) {
     winner: null,         // 结算后：数组（并列多人）
     over: false,
     log: [],              // 最近消息
+    startedAt: Date.now(),// 对局开始时间（记录"用时"用）
   };
 
   // 洗牌：每级一个牌库，翻 4 张到展示区
@@ -2137,22 +2179,33 @@ var Home = {
     addClickable('home:zoomIn', zxR, zy, zbb, zbb, 2);
 
     // 底部规则文本：左侧加圆形感叹号「玩法说明」按钮，文本+按钮整体居中；
-    // 窄屏时文本字号自动收缩，保证「按钮+文本」一行放得下（不溢出/不出屏）
+    // 有历史记录时，「记录」按钮出现在文本右侧，与玩法说明按钮关于中轴对称；无记录则只显示玩法说明
     var rulesStr = '规则：轮流行动 · 拿宝石 / 买牌 / 保留 · 先达 15 分并完成本轮者胜';
     var rlen = rulesStr.length;
+    var hasRec = hasRecords();              // 有历史记录才显示「记录」按钮
     var rfs = Math.min(13, W * 0.032);
-    var hd = Math.min(30, W * 0.08);        // 感叹号按钮直径
-    var hgap = 5;                           // 按钮紧贴文本左侧，间距 5px
-    var rAvail = W - 2 * 8 - hd - hgap;     // 文本可用宽度（两侧各留 8px 安全边距）
+    var hd = Math.min(30, W * 0.08);        // 圆形按钮直径（玩法说明 / 记录）
+    var hgap = 5;                           // 按钮与文本间距
+    var rAvail = W - 2 * 8 - (hasRec ? 2 : 1) * (hd + hgap);   // 文本可用宽度（两侧各留 8px 安全边距 + 按钮空间）
     rfs = Math.min(rfs, rAvail / ((rlen + 1) * 1.1));
     var rtw = (rlen * rfs + rfs) * 1.1;     // 文本宽（与 mkTextMesh 尺寸公式一致）
-    // 组合体（按钮+间距+文本）总宽 = hd+hgap+rtw，绕原点对称居中：
-    var rx = (hd + hgap) / 2;               // 文本中心（右移）
-    var hx = -(rtw + hgap) / 2;             // 按钮中心（左移）
+    var rx, hx, recX = 0;
+    if (hasRec) {
+      rx = 0;                               // 文本居中
+      hx = -(rtw / 2 + hgap + hd / 2);      // 玩法说明按钮（左）
+      recX = rtw / 2 + hgap + hd / 2;       // 记录按钮（右），关于中轴对称
+    } else {
+      rx = (hd + hgap) / 2;                 // 组合体居中：文本右移
+      hx = -(rtw + hgap) / 2;               // 按钮左移
+    }
     var rulesY = hasS ? H / 2 - H * 0.93 : H / 2 - H * 0.85;
     mkTextMesh(rulesStr, rx, rulesY, rfs, 'rgba(230,238,252,0.68)', { key: 'rules', bold: false });
     mkMesh(helpBtnTex(hd), hd, hd, hx, rulesY, 2);
     addClickable('home:help', hx, rulesY, hd, hd, 2);
+    if (hasRec) {
+      mkMesh(recBtnTex(hd), hd, hd, recX, rulesY, 2);
+      addClickable('home:records', recX, rulesY, hd, hd, 2);
+    }
     this.refresh();
   },
   refresh: function () {
@@ -2180,6 +2233,7 @@ var Home = {
     }
     if (key === 'home:start') { playSfx('start'); startGame(Home.players); }
     if (key === 'home:help') { playSfx('tap'); HelpModal.open(); }
+    if (key === 'home:records') { playSfx('tap'); RecordModal.open(); }
     if (key === 'home:load') {
       playSfx('start');
       if (!loadGame()) { playSfx('err'); rebuildScreen(); }   // 无有效存档：刷新首页使按钮消失
@@ -2269,6 +2323,41 @@ function helpBtnTex(d) {
     ctx.strokeStyle = 'rgba(240,201,60,0.7)';
     ctx.stroke();
     text(ctx, '!', w / 2, h / 2 + 0.5, w * 0.6, '#f5d76e', 'center');
+  });
+}
+
+// 「记录」按钮纹理（与玩法说明按钮同款圆形样式，图标为金色时钟）
+function recBtnTex(d) {
+  return makeTex('recbtn', d, d, function (ctx, w, h) {
+    // 外圈金色微光（与 helpBtnTex 一致）
+    ctx.save();
+    ctx.shadowColor = 'rgba(240,201,60,0.55)';
+    ctx.shadowBlur = 10;
+    var g = ctx.createRadialGradient(w * 0.35, h * 0.32, w * 0.08, w / 2, h / 2, w / 2);
+    g.addColorStop(0, '#5a76a8');
+    g.addColorStop(1, '#2c3a56');
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 1, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(240,201,60,0.7)';
+    ctx.stroke();
+    // 时钟：外圆 + 分针（上）+ 时针（右）
+    var cx = w / 2, cy = h / 2, r = w * 0.21;
+    ctx.strokeStyle = '#f5d76e';
+    ctx.lineWidth = Math.max(1.4, w * 0.07);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, cy - r * 0.55);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + r * 0.42, cy);
+    ctx.stroke();
   });
 }
 
@@ -2686,6 +2775,84 @@ var HelpModal = {
     var close = function () { self.close(); };
     ov.querySelector('#help-close').addEventListener('click', close);
     ov.querySelector('#help-gotit').addEventListener('click', close);
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    this._keyHandler = function (e) { if (e.key === 'Escape' || e.key === 'Esc') close(); };
+    document.addEventListener('keydown', this._keyHandler);
+
+    this.el = ov;
+    document.body.appendChild(ov);
+  },
+  close: function () {
+    if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null; }
+    if (this.el) { this.el.remove(); this.el = null; }
+  },
+};
+
+// ============================================================
+// 对局记录弹窗（DOM 模态，样式与玩法说明同款）
+// 展示历史比赛结果：结束时间 / 用时 / 人数 / 各玩家颜色·分数·发展卡·贵族卡，胜利者高亮；
+// 支持「清空所有记录」。入口按钮仅在存在记录时显示于首页底部。
+// ============================================================
+var RecordModal = {
+  el: null,
+  _keyHandler: null,
+  open: function () {
+    if (this.el) return;
+    var recs = loadRecords();
+    var ov = document.createElement('div');
+    ov.id = 'record-overlay';
+    var listHtml = '';
+    if (!recs.length) {
+      listHtml = '<div class="rec-empty">暂无对局记录</div>';
+    } else {
+      for (var i = 0; i < recs.length; i++) {
+        var r = recs[i];
+        var rows = '';
+        if (r.ps && r.ps.length) {
+          for (var j = 0; j < r.ps.length; j++) {
+            var p = r.ps[j];
+            rows +=
+              '<div class="rec-row' + (p.w ? ' rec-win' : '') + '">' +
+                '<span class="rec-dot" style="background:' + safeColor(p.c) + '"></span>' +
+                '<span class="rec-name">' + escHtml(p.n) + '</span>' +
+                '<span class="rec-num">' + (p.s | 0) + ' 分</span>' +
+                '<span class="rec-num">开发 ' + (p.d | 0) + '</span>' +
+                '<span class="rec-num">贵族 ' + (p.nb | 0) + '</span>' +
+                (p.w ? '<span class="rec-star">★</span>' : '') +
+              '</div>';
+          }
+        }
+        listHtml +=
+          '<div class="rec-card">' +
+            '<div class="rec-head">' +
+              '<span>' + escHtml(fmtDateTime(r.t)) + '</span>' +
+              '<span>用时 ' + escHtml(fmtDuration(r.dur)) + '</span>' +
+              '<span>' + (r.n | 0) + ' 人对局</span>' +
+            '</div>' + rows +
+          '</div>';
+      }
+    }
+    ov.innerHTML =
+      '<div id="record-panel">' +
+        '<div id="record-head"><span class="t">对局记录</span><button id="record-close" type="button" aria-label="关闭">✕</button></div>' +
+        '<div id="record-scroll">' + listHtml + '</div>' +
+        '<div id="record-foot">' +
+          (recs.length ? '<button id="record-clear" type="button">清空所有记录</button>' : '') +
+          '<button id="record-gotit" type="button">知道了</button>' +
+        '</div>' +
+      '</div>';
+
+    // 关闭交互：✕ / 知道了 / 点击遮罩空白处 / Esc；清空后重建首页（隐藏记录按钮）
+    var self = this;
+    var close = function () { self.close(); };
+    ov.querySelector('#record-close').addEventListener('click', close);
+    ov.querySelector('#record-gotit').addEventListener('click', close);
+    var clearBtn = ov.querySelector('#record-clear');
+    if (clearBtn) clearBtn.addEventListener('click', function () {
+      clearRecords();
+      close();
+      if (Screen.current === 'home') rebuildScreen();   // 刷新首页：记录按钮消失
+    });
     ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
     this._keyHandler = function (e) { if (e.key === 'Escape' || e.key === 'Esc') close(); };
     document.addEventListener('keydown', this._keyHandler);
@@ -3214,7 +3381,7 @@ var GameScreen = {
 
   msgFor: function (g) {
     var p = g.players[g.current];
-    if (g.phase === 'noble-choice') return '满足多张贵族卡，请点选一张后按执行';
+    if (g.phase === 'noble-choice') return '满足多张贵族卡，请点选一张即可获得';
     if (g.phase === 'action' && uiAllActionsDisabled(g)) return '无可行动作，请按「跳过」结束本回合';
     var selN = UI.selected.length;
     switch (UI.mode) {
@@ -3284,11 +3451,11 @@ var GameScreen = {
           1.5, 0, 0);
       });
     }
-    // 贵族选择阶段
+    // 贵族选择阶段：候选卡绿色发光提示（点选即获得，无需选中态）
     if (g.phase === 'noble-choice') {
-      g.nobleChoices.forEach(function (idx, i) {
+      g.nobleChoices.forEach(function (idx) {
         var x = L.nobles.x, y = L.nobles.ys[idx], w = L.nobles.w, h = L.nobles.h;
-        setGlow('nb' + idx, UI.pickNoble === i ? 'blue' : 'green', x, y, w, h, 2.6);
+        setGlow('nb' + idx, 'green', x, y, w, h, 2.6);
       });
     } else {
       g.nobles.forEach(function (n, i) { setGlow('nb' + i, null); });
@@ -3339,24 +3506,20 @@ var GameScreen = {
         var idx = +key.slice(6);
         var ci = g.nobleChoices.indexOf(idx);
         if (ci >= 0) {
-          UI.pickNoble = UI.pickNoble === ci ? null : ci;
-          playSfx('tap');
-          this.refresh();
+          // 点选即获得（无需再按「执行」）：+3 分数从贵族卡飞向当前玩家面板分数位，落地后结算
+          UI.pickNoble = ci;
+          playSfx('buy');
+          var nIdx = g.nobleChoices[ci];
+          playNobleScoreAnim(g, nIdx, function () {
+            var snapN = snapshotNumbers(g);   // 贵族结算前快照（+3 前）
+            uiConfirmNoble(g);
+            if (g.phase === 'end') showScreen('end');
+            else {
+              showScreen('game');   // 重建：操作栏跟随新回合玩家座位
+              playNumberPulses(g, snapN);   // 分数 +3 的数字脉动
+            }
+          });
         }
-      } else if (key === 'exec') {
-        // 贵族确认：+3 分数从贵族卡飞向当前玩家面板分数位，落地后才结算分数
-        if (UI.pickNoble === null) { playSfx('err'); return; }
-        playSfx('buy');
-        var nIdx = g.nobleChoices[UI.pickNoble];
-        playNobleScoreAnim(g, nIdx, function () {
-          var snapN = snapshotNumbers(g);   // 贵族结算前快照（+3 前）
-          uiConfirmNoble(g);
-          if (g.phase === 'end') showScreen('end');
-          else {
-            showScreen('game');   // 重建：操作栏跟随新回合玩家座位
-            playNumberPulses(g, snapN);   // 分数 +3 的数字脉动
-          }
-        });
       }
       return;
     }
@@ -3460,6 +3623,7 @@ var EndScreen = {
       G._endAnim = false;
       EndScreen.anim = buildWinAnim(titleMesh, winMeshes, W, H);
       playSfx('win');
+      saveGameRecord(g);   // 结算时写入历史对局记录
     }
   },
   onTap: function (key) {
@@ -3574,7 +3738,66 @@ function goHome() {
 
 // ---------- 对局存档 / 读档（localStorage 持久化，始终最多 1 份） ----------
 var SAVE_KEY = 'gg_save_v1';
-function saveGame() {
+
+// ---------- 历史对局记录（localStorage 数组，最新在前，上限 REC_MAX 条） ----------
+var REC_KEY = 'gg_records_v1';
+var REC_MAX = 50;
+function loadRecords() {
+  try {
+    var a = JSON.parse(localStorage.getItem(REC_KEY));
+    return Array.isArray(a) ? a : [];
+  } catch (e) { return []; }
+}
+function hasRecords() { return loadRecords().length > 0; }
+function saveRecord(rec) {
+  try {
+    var a = loadRecords();
+    a.unshift(rec);
+    if (a.length > REC_MAX) a.length = REC_MAX;
+    localStorage.setItem(REC_KEY, JSON.stringify(a));
+  } catch (e) { /* 存储失败忽略 */ }
+}
+function clearRecords() {
+  try { localStorage.removeItem(REC_KEY); } catch (e) {}
+}
+// 结算时保存一局结果：时间戳 / 用时(秒) / 人数 / 各玩家{名, 颜色, 分数, 发展卡, 贵族卡, 是否胜利}
+function saveGameRecord(g) {
+  var players = [];
+  for (var i = 0; i < g.players.length; i++) {
+    var p = g.players[i];
+    players.push({
+      n: p.theme.name + ' 玩家' + (i + 1),
+      c: p.theme.hex || '#cfd8e8',
+      s: p.score,
+      d: playerCardsCount(p),
+      nb: p.nobles.length,
+      w: g.winner && g.winner.indexOf(i) >= 0,
+    });
+  }
+  var dur = Math.max(0, Math.round((Date.now() - (g.startedAt || Date.now())) / 1000));
+  saveRecord({ t: Date.now(), dur: dur, n: g.players.length, ps: players });
+}
+// 时间格式化：年-月-日 时:分
+function fmtDateTime(ts) {
+  var d = new Date(ts);
+  function p2(v) { return (v < 10 ? '0' : '') + v; }
+  return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+}
+// 时长格式化：X 分 YY 秒
+function fmtDuration(sec) {
+  var m = Math.floor(sec / 60), s = sec % 60;
+  return m + ' 分 ' + (s < 10 ? '0' : '') + s + ' 秒';
+}
+// HTML 转义（记录数据来自 localStorage，防御性转义）
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+// 颜色白名单校验：仅接受 6 位 hex（用于 style 属性，杜绝注入）
+function safeColor(c) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(c)) ? String(c) : '#cfd8e8';
+}function saveGame() {
   try {
     if (!G.game || G.game.over) return false;
     localStorage.setItem(SAVE_KEY, JSON.stringify(G.game));
@@ -3619,6 +3842,7 @@ function loadGame() {
         while (dv.length > 1) g.draw[t2].push(dv.pop());
       }
     }
+    if (!g.startedAt) g.startedAt = Date.now();   // 旧存档/读档后从此刻起计时
     G.game = g;
     uiReset();
     showScreen('game');
