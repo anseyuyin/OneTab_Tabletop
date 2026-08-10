@@ -822,6 +822,47 @@ function drawGemChip(ctx, cx, cy, r, hex, dark, stroke) {
   ctx.fill();
 }
 
+// 中华传统菱格纹：双层菱形 + 中心圆点平铺底纹（低透明度装饰，不干扰对局内容）
+// 菱形顶点相接、隔行错位半格，形成织锦/窗棂式菱格网；密度 1.5 倍
+function drawRhombusPattern(ctx, w, h) {
+  var cell = Math.max(60, Math.round(Math.min(w, h) * 0.13 / 1.5));   // 网格边长（密度 1.5 倍）
+  var hw = cell / 2, hh = cell / 2;                             // 菱形半宽 / 半高（正菱形）
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = 'rgba(215,180,110,1)';
+  ctx.strokeStyle = 'rgba(215,180,110,1)';
+  ctx.lineWidth = Math.max(1, cell * 0.014);
+  var row = 0;
+  for (var gy = -cell; gy < h + cell; gy += cell, row++) {
+    var col = 0;
+    for (var gx = -cell; gx < w + cell; gx += cell, col++) {
+      var cx2 = gx + hw + (row % 2 ? hw : 0);   // 隔行错位半格
+      var cy2 = gy + hh;
+      // 外层菱形
+      ctx.beginPath();
+      ctx.moveTo(cx2, cy2 - hh);
+      ctx.lineTo(cx2 + hw, cy2);
+      ctx.lineTo(cx2, cy2 + hh);
+      ctx.lineTo(cx2 - hw, cy2);
+      ctx.closePath();
+      ctx.stroke();
+      // 内层菱形（织锦双层结构）
+      ctx.beginPath();
+      ctx.moveTo(cx2, cy2 - hh * 0.62);
+      ctx.lineTo(cx2 + hw * 0.62, cy2);
+      ctx.lineTo(cx2, cy2 + hh * 0.62);
+      ctx.lineTo(cx2 - hw * 0.62, cy2);
+      ctx.closePath();
+      ctx.stroke();
+      // 中心圆点（菱花之心）
+      ctx.beginPath();
+      ctx.arc(cx2, cy2, Math.max(2, cell * 0.028), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 // ---------- 纹理工厂 ----------
 function gemTex(colorKey, size) {
   var info = colorKey === 'Y' ? GOLD_INFO : COLOR_INFO[colorKey];
@@ -2568,6 +2609,7 @@ var GameScreen = {
       grad.addColorStop(1, '#141a28');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
+      drawRhombusPattern(ctx, w, h);   // 桌面底纹：中华传统菱格纹
     });
     mkMesh(bg, L.W, L.H, 0, 0, 0);
 
