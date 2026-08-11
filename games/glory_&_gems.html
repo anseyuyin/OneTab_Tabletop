@@ -1508,6 +1508,7 @@ FLY.gem = function (colorKey, from, to, size, opts) {
     fromScale: 1, toScale: opts.toScale !== undefined ? opts.toScale : 0.55,
     arc: opts.arc !== undefined ? opts.arc : 26,
     fadeOut: true,
+    onLand: opts.onLand,   // 落地回调（用于资源落地瞬间播放音效）
   });
 };
 
@@ -2928,17 +2929,18 @@ function playActionAnimated(g, info, done) {
     var keys = COLORS.concat(['Y']);
     return { x: L.gems.x, y: L.gems.ys[keys.indexOf(colorKey)] };
   };
+  var sfxCoinDrop = function () { playSfx('coinDrop'); };   // 资源落地「磕嗒」
 
   switch (info.type) {
     // 拿 3 色 / 拿 2 个：各色宝石从银行对应资源堆飞向面板对应资源槽
     case 'take3':
       info.cols.forEach(function (c, i) {
-        FLY.gem(c, bankPos(c), toW(lay.slots[COLORS.indexOf(c)]), L.gems.size, { delay: i * 90, dur: 440 });
+        FLY.gem(c, bankPos(c), toW(lay.slots[COLORS.indexOf(c)]), L.gems.size, { delay: i * 90, dur: 440, onLand: sfxCoinDrop });
       });
       break;
     case 'take2':
-      FLY.gem(info.col, bankPos(info.col), toW(lay.slots[COLORS.indexOf(info.col)]), L.gems.size, { delay: 0, dur: 440 });
-      FLY.gem(info.col, bankPos(info.col), toW(lay.slots[COLORS.indexOf(info.col)]), L.gems.size, { delay: 110, dur: 440 });
+      FLY.gem(info.col, bankPos(info.col), toW(lay.slots[COLORS.indexOf(info.col)]), L.gems.size, { delay: 0, dur: 440, onLand: sfxCoinDrop });
+      FLY.gem(info.col, bankPos(info.col), toW(lay.slots[COLORS.indexOf(info.col)]), L.gems.size, { delay: 110, dur: 440, onLand: sfxCoinDrop });
       break;
     // 购买：发展卡飞向面板该色发展计数槽；非保留购买时牌堆补一张飞向空展示位
     case 'buy': {
@@ -2954,9 +2956,11 @@ function playActionAnimated(g, info, done) {
         if (mk0) mk0.visible = false;   // 原地卡先隐藏，避免与飞行分身叠影
       }
       FLY.card(info.card, false, from, toW(slot), L.cards[tier].w, L.cards[tier].h, { toScale: 0.5, fadeOut: true, dur: 560 });
+      playSfx('whoosh');   // 发展卡飞到玩家：「嗖」
       if (!info.fromReserved && g.draw[tier] && g.draw[tier].length) {
         var nc = g.draw[tier][g.draw[tier].length - 1];   // 牌库顶（仅预览，状态变更时才真正弹出）
         FLY.card(nc, false, deckPos(tier), showPos(tier, info.col), L.cards[tier].w, L.cards[tier].h, { delay: 170, dur: 500, arc: 18 });
+        playSfx('whoosh', 0.17);   // 补牌从牌堆刷出：「嗖」（与飞行 delay 同步）
       }
       break;
     }
@@ -2973,10 +2977,12 @@ function playActionAnimated(g, info, done) {
       // 展示保留传真实卡（牌面飞行）；盲保留传占位（卡背飞行）
       var resvCard = info.fromDraw ? { tier: tier2 } : tableCards(g, tier2, info.col);
       FLY.card(resvCard, info.fromDraw, from2, toW(resvT), rs.w, rs.h, { dur: 560, arc: 26 });
-      FLY.gem('Y', bankPos('Y'), toW(layT.gold), L.gems.size, { delay: 120, dur: 460 });
+      playSfx('whoosh');   // 保留卡飞向玩家：「嗖」
+      FLY.gem('Y', bankPos('Y'), toW(layT.gold), L.gems.size, { delay: 120, dur: 460, onLand: sfxCoinDrop });
       if (!info.fromDraw && g.draw[tier2] && g.draw[tier2].length) {
         var nc2 = g.draw[tier2][g.draw[tier2].length - 1];
         FLY.card(nc2, false, deckPos(tier2), showPos(tier2, info.col), L.cards[tier2].w, L.cards[tier2].h, { delay: 260, dur: 500, arc: 16 });
+        playSfx('whoosh', 0.26);   // 补牌从牌堆刷出：「嗖」（与飞行 delay 同步）
       }
       break;
     }
@@ -3057,6 +3063,7 @@ function playNumberPulses(g, snap) {
   }
   // 面板：分数菱形（文字中心 = 菱形中心，size = db*0.8 ≈ CH*0.168）
   if (p.score !== snap.score) {
+    if (p.score > snap.score) playSfx('coin');   // 获得分值：马里奥金币音效（买卡得分/贵族 +3）
     pushNum(toW(lay.score), p.score, CH * 0.168, '#ffffff', p.score > snap.score ? 1.5 : 0.75, rot);
   }
   // 面板：5 色槽位主数字（发展卡数，内容坐标中心 = scx-ss*0.08, midY-ss*0.12）+ 角标（宝石数）
@@ -3202,7 +3209,7 @@ var GameScreen = {
             { x: Ld.cards[t2].xs[c2], y: Ld.cards[t2].rowY },
             Ld.cards[t2].w, Ld.cards[t2].h,
             {
-              delay: seq * 70, dur: 480, arc: 20,
+              delay: seq * 100, dur: 700, arc: 20,
               onLand: (function (k) {
                 return function () {
                   var mk = GameScreen.cardMeshes[k];
@@ -3210,6 +3217,7 @@ var GameScreen = {
                 };
               })(key2),
             });
+          playSfx('whoosh', seq * 0.1, 0.55);   // 初始发牌：每张卡刷出「嗖」（12 连发场景降音量避免叠加刺耳）
           seq++;
         }
       }
@@ -4007,11 +4015,12 @@ function dispatchTap(wx, wy) {
 
 // ---------- 音效（WebAudio 合成，无外部资源） ----------
 var AC = null;
-function playSfx(type) {
+function playSfx(type, delaySec, volScale) {
   try {
     AC = AC || new (window.AudioContext || window.webkitAudioContext)();
     if (AC.state === 'suspended') AC.resume();
-    var t = AC.currentTime;
+    var t = AC.currentTime + (delaySec || 0);   // delaySec：延迟发声（与飞行动画 delay 同步）
+    var vs = volScale || 1;                     // volScale：音量倍率（密集场景降噪用）
     if (type === 'win') {
       // 胜利号角：C5-E5-G5-C6 上行琶音 + C4 低音衬底
       [523.25, 659.25, 783.99, 1046.5].forEach(function (f, i) {
@@ -4031,6 +4040,87 @@ function playSfx(type) {
       gb.gain.setValueAtTime(0.09, t);
       gb.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
       ob.start(t); ob.stop(t + 0.95);
+      return;
+    }
+    if (type === 'whoosh') {
+      // 卡牌快速刷出「嗖」：带通噪声频率上扫（350→2400Hz）+ 正弦包络平滑收放 + 轻柔滑音增强空气感
+      // （用户认可的保留牌音色；密集场景由调用方传 volScale 降音量避免叠加刺耳）
+      var wdur = 0.28;
+      var wbuf = AC.createBuffer(1, Math.floor(AC.sampleRate * wdur), AC.sampleRate);
+      var wch = wbuf.getChannelData(0);
+      for (var wi = 0; wi < wch.length; wi++) {
+        var wp = wi / wch.length;
+        wch[wi] = (Math.random() * 2 - 1) * Math.pow(Math.sin(Math.PI * wp), 0.7);   // 0→1→0 平滑包络
+      }
+      var ws = AC.createBufferSource(); ws.buffer = wbuf;
+      var wf = AC.createBiquadFilter();
+      wf.type = 'bandpass'; wf.Q.value = 1.8;
+      wf.frequency.setValueAtTime(350, t);
+      wf.frequency.exponentialRampToValueAtTime(2400, t + wdur);
+      var wg = AC.createGain();
+      wg.gain.value = 0.2 * vs;   // 音量 0.28→0.2：更轻柔
+      ws.connect(wf); wf.connect(wg); wg.connect(AC.destination);
+      ws.start(t); ws.stop(t + wdur);
+      // 轻柔滑音：sine 500→1100Hz 上扫，音量低，作为「风声」主体让嗖声更圆润
+      var wo = AC.createOscillator(), wog = AC.createGain();
+      wo.type = 'sine';
+      wo.frequency.setValueAtTime(500, t);
+      wo.frequency.exponentialRampToValueAtTime(1100, t + wdur);
+      wog.gain.setValueAtTime(0.0001, t);
+      wog.gain.exponentialRampToValueAtTime(0.045 * vs, t + wdur * 0.35);
+      wog.gain.exponentialRampToValueAtTime(0.0001, t + wdur);
+      wo.connect(wog); wog.connect(AC.destination);
+      wo.start(t); wo.stop(t + wdur);
+      return;
+    }
+    if (type === 'coinDrop') {
+      // 货币落下「磕嗒」清脆版：锐利高频瞬态噪声 + 明亮金属叮声，低频近乎去除——短促利落不沉闷
+      // 1) 撞击瞬态：白噪声 40ms 经 2000Hz 高通，二次方包络快衰减 = 锐利的「嗒」
+      var cdur = 0.04;
+      var cbuf = AC.createBuffer(1, Math.floor(AC.sampleRate * cdur), AC.sampleRate);
+      var cch = cbuf.getChannelData(0);
+      for (var ci = 0; ci < cch.length; ci++) {
+        cch[ci] = (Math.random() * 2 - 1) * Math.pow(1 - ci / cch.length, 2);
+      }
+      var cs = AC.createBufferSource(); cs.buffer = cbuf;
+      var chp = AC.createBiquadFilter(); chp.type = 'highpass'; chp.frequency.value = 2000;
+      var cg = AC.createGain();
+      cg.gain.setValueAtTime(0.32, t);
+      cg.gain.exponentialRampToValueAtTime(0.001, t + 0.035);
+      cs.connect(chp); chp.connect(cg); cg.connect(AC.destination);
+      cs.start(t); cs.stop(t + cdur);
+      // 2) 明亮金属叮：两个更高频正弦极快衰减（2800/4200Hz，硬币清脆共振）
+      [2800, 4200].forEach(function (f, i) {
+        var o4 = AC.createOscillator(), g4 = AC.createGain();
+        o4.type = 'sine'; o4.frequency.value = f;
+        g4.gain.setValueAtTime(0.13, t);
+        g4.gain.exponentialRampToValueAtTime(0.001, t + 0.04 + i * 0.008);
+        o4.connect(g4); g4.connect(AC.destination);
+        o4.start(t); o4.stop(t + 0.06);
+      });
+      // 3) 极轻低频：仅留一丝碰撞重量感，不产生沉闷
+      var ob = AC.createOscillator(), gb = AC.createGain();
+      ob.type = 'sine';
+      ob.frequency.setValueAtTime(200, t);
+      ob.frequency.exponentialRampToValueAtTime(150, t + 0.02);
+      gb.gain.setValueAtTime(0.05, t);
+      gb.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
+      ob.connect(gb); gb.connect(AC.destination);
+      ob.start(t); ob.stop(t + 0.03);
+      return;
+    }
+    if (type === 'coin') {
+      // 获得分值：马里奥金币风格，B5 → E6 双音快速上行（方波）
+      [987.77, 1318.51].forEach(function (f, i) {
+        var o3 = AC.createOscillator(), g3 = AC.createGain();
+        o3.type = 'square'; o3.frequency.value = f;
+        o3.connect(g3); g3.connect(AC.destination);
+        var st = t + i * 0.09;
+        g3.gain.setValueAtTime(0.0001, st);
+        g3.gain.exponentialRampToValueAtTime(0.09, st + 0.01);
+        g3.gain.exponentialRampToValueAtTime(0.001, st + 0.13);
+        o3.start(st); o3.stop(st + 0.15);
+      });
       return;
     }
     var base = type === 'tap' ? 880 : type === 'buy' ? 660 : type === 'err' ? 200 : type === 'start' ? 523 : 440;
