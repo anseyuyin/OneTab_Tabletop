@@ -59,13 +59,13 @@
   @keyframes barSlide { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
 
   /* ===== 玩法说明弹窗（DOM 模态：自适应窗口 + 内容纵向滚动） ===== */
-  #help-overlay, #record-overlay {
+  #help-overlay, #record-overlay, #ai-overlay {
     position: fixed; inset: 0; z-index: 9999;
     display: flex; align-items: center; justify-content: center;
     background: rgba(5,8,14,0.72);
     font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif;
   }
-  #help-panel, #record-panel {
+  #help-panel, #record-panel, #ai-panel {
     display: flex; flex-direction: column;
     width: 660px; max-width: 94vw;
     max-height: 82vh; max-height: 82dvh;
@@ -73,19 +73,20 @@
     color: #dfe8f8; box-shadow: 0 12px 44px rgba(0,0,0,.55);
     overflow: hidden;
   }
-  #help-head, #record-head {
+  #ai-panel { width: 520px; max-width: 94vw; }
+  #help-head, #record-head, #ai-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: 12px 16px 10px; border-bottom: 1px solid rgba(61,79,117,.6);
     flex-shrink: 0;
   }
-  #help-head .t, #record-head .t { font-size: 17px; font-weight: bold; color: #f5d76e; letter-spacing: 3px; }
-  #help-close, #record-close {
+  #help-head .t, #record-head .t, #ai-head .t { font-size: 17px; font-weight: bold; color: #f5d76e; letter-spacing: 3px; }
+  #help-close, #record-close, #ai-close {
     width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
     background: #2c3a56; border: 1.5px solid #3d4f75; color: #cfd8e8;
     font-size: 14px; line-height: 1; padding: 0; flex-shrink: 0;
   }
-  #help-close:active, #record-close:active { background: #3a465e; }
-  #help-scroll, #record-scroll {
+  #help-close:active, #record-close:active, #ai-close:active { background: #3a465e; }
+  #help-scroll, #record-scroll, #ai-body {
     flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
     padding: 14px 16px 18px; touch-action: pan-y;
     overscroll-behavior: contain;
@@ -93,6 +94,45 @@
   #help-scroll::-webkit-scrollbar, #record-scroll::-webkit-scrollbar { width: 8px; }
   #help-scroll::-webkit-scrollbar-thumb, #record-scroll::-webkit-scrollbar-thumb { background: #3d4f75; border-radius: 4px; }
   #help-scroll::-webkit-scrollbar-track, #record-scroll::-webkit-scrollbar-track { background: transparent; }
+  /* ===== 人机对战设置弹窗：人数选择 + 方位操作员配置 ===== */
+  .ai-sec { margin-bottom: 14px; }
+  .ai-sec h3 {
+    margin: 0 0 10px; font-size: 14px; color: #f5d76e; font-weight: bold;
+    border-left: 3px solid #3f7fd4; padding-left: 8px;
+  }
+  .ai-num-row { display: flex; gap: 10px; justify-content: center; }
+  .ai-num-btn {
+    flex: 1; max-width: 110px; padding: 10px 0; border-radius: 10px; cursor: pointer;
+    background: #2c3a56; border: 1.5px solid #3d4f75; color: #dfe8f8;
+    font-size: 14px; font-weight: bold; letter-spacing: 2px; font-family: inherit;
+  }
+  .ai-num-btn.sel { background: #1f4e8a; border-color: #3aa0ff; color: #fff; box-shadow: 0 0 12px rgba(58,160,255,0.4); }
+  .ai-dir-grid {
+    position: relative; width: 300px; max-width: 100%; height: 220px; margin: 0 auto;
+    background: #182238; border: 1px solid #31405f; border-radius: 12px;
+  }
+  .ai-dir-btn {
+    position: absolute; width: 118px; padding: 10px 0; border-radius: 10px; cursor: pointer;
+    background: #2c3a56; border: 1.5px solid #3d4f75; color: #dfe8f8;
+    font-size: 13px; font-weight: bold; letter-spacing: 1px; text-align: center; font-family: inherit;
+  }
+  .ai-dir-btn .d { display: block; font-size: 12px; letter-spacing: 2px; margin-bottom: 3px; color: #9fb2cc; }
+  .ai-dir-btn.simple { background: #1e6f4c; border-color: #35c98a; color: #eafff4; box-shadow: 0 0 10px rgba(53,201,138,0.35); }
+  .ai-dir-btn.simple .d { color: #b9f0d8; }
+  .ai-dir-btn.normal { background: #8a6d1d; border-color: #e0b33c; color: #fff6dd; box-shadow: 0 0 10px rgba(224,179,60,0.35); }
+  .ai-dir-btn.normal .d { color: #f3dd9a; }
+  .ai-dir-btn.hard { background: #7a3140; border-color: #e0566e; color: #ffeef1; box-shadow: 0 0 10px rgba(224,86,110,0.35); }
+  .ai-dir-btn.hard .d { color: #f6b7c2; }
+  .ai-dir-btn.disabled { opacity: 0.3; cursor: not-allowed; filter: grayscale(0.6); }
+  .ai-dir-btn:active:not(.disabled) { filter: brightness(1.25); }
+  #ai-foot { flex-shrink: 0; padding: 12px 16px 16px; text-align: center; border-top: 1px solid rgba(61,79,117,.6); }
+  #ai-start {
+    padding: 10px 44px; border-radius: 20px; border: none; cursor: pointer;
+    background: linear-gradient(180deg, #5f9ef0, #2a56a8);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 3px 10px rgba(0,0,0,0.35);
+    color: #fff; font-size: 15px; letter-spacing: 6px; font-family: inherit;
+  }
+  #ai-start:active { filter: brightness(1.2); }
   .help-sec { margin-bottom: 18px; }
   .help-sec h3 {
     margin: 0 0 10px; font-size: 15px; color: #f5d76e; font-weight: bold;
@@ -629,6 +669,7 @@ function beginTurn(g) {
   }
   g.phase = 'action';
   g.nobleChoices = [];
+  if (typeof AI !== 'undefined' && AI && AI.maybeRun) AI.maybeRun();   // 若轮到人机玩家，自动接入其回合
 }
 function finishGame(g) {
   g.over = true;
@@ -2022,6 +2063,49 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
       rcCards.push({ cx: bx2 + rw / 2, cy: midY, w: rw, h: rh, uid: r2.card.uid, visCx: visCx2, visW: visW2 });
     }
   }
+
+  // 人机标识：面板左下角绘制机器人小图标（标识该座位由 AI 控制）
+  // 图标底部贴近面板底边（下移避让左上角积分菱形）
+  if (p.isAI) {
+    var rsz = Math.max(7, Math.min(CH * 0.17, CW * 0.055));
+    var bx = pad + rsz, by = CH - pad - 2;
+    // 天线 + 顶部圆珠
+    ctx.strokeStyle = '#9aa0a8';
+    ctx.lineWidth = Math.max(1, rsz * 0.13);
+    ctx.beginPath();
+    ctx.moveTo(bx, by - rsz * 0.72);
+    ctx.lineTo(bx - rsz * 0.28, by - rsz * 1.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(bx - rsz * 0.28, by - rsz * 1.2, rsz * 0.16, 0, Math.PI * 2);
+    ctx.fillStyle = '#e0566e';
+    ctx.fill();
+    // 头部（主题色渐变圆角方块）
+    var hw = rsz * 0.92, hh = rsz * 0.74;
+    var hg = ctx.createLinearGradient(0, by - hh, 0, by);
+    hg.addColorStop(0, p.theme.light);
+    hg.addColorStop(1, p.theme.hex);
+    ctx.fillStyle = hg;
+    rr(ctx, bx - hw / 2, by - hh, hw, hh, hh * 0.18);
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, rsz * 0.1);
+    ctx.strokeStyle = p.theme.dark;
+    rr(ctx, bx - hw / 2, by - hh, hw, hh, hh * 0.18);
+    ctx.stroke();
+    // 眼睛
+    ctx.fillStyle = '#20304a';
+    ctx.beginPath();
+    ctx.arc(bx - rsz * 0.28, by - hh * 0.62, rsz * 0.13, 0, Math.PI * 2);
+    ctx.arc(bx + rsz * 0.28, by - hh * 0.62, rsz * 0.13, 0, Math.PI * 2);
+    ctx.fill();
+    // 嘴巴
+    ctx.strokeStyle = p.theme.dark;
+    ctx.lineWidth = Math.max(1, rsz * 0.1);
+    ctx.beginPath();
+    ctx.moveTo(bx - rsz * 0.28, by - hh * 0.3);
+    ctx.lineTo(bx + rsz * 0.28, by - hh * 0.3);
+    ctx.stroke();
+  }
   return rcCards;
 }
 
@@ -2151,6 +2235,13 @@ var Home = {
 
     var sbw = Math.min(220, W * 0.5), sbh = 56;
     var startY = H / 2 - H * 0.68;
+    // 「人机」按钮：位于「开始游戏」右侧，宽度缩小
+    var aibw = Math.min(60, W * 0.2), aibh = 44;
+    var aiGap = 12;
+    var aiX = sbw / 2 + aiGap + aibw / 2;
+    // 「人机」按钮：与「开始游戏」相近的蓝色系，但更偏青绿、略暗一点，形成细微区分
+    mkMesh(luxeBtnTex('人 机', aibw, aibh, { c1: '#4f9bb8', c2: '#24536e', fg: '#eaf6fb', border: 'rgba(8,30,45,0.45)', key: 'ai' }), aibw, aibh, aiX, startY, 2);
+    addClickable('home:ai', aiX, startY, aibw, aibh, 2);
     mkMesh(luxeBtnTex('开 始 游 戏', sbw, sbh, { c1: '#5f9ef0', c2: '#2a56a8', fg: '#fff', border: 'rgba(10,25,60,0.55)', key: 'start' }), sbw, sbh, 0, startY, 2);
     addClickable('home:start', 0, startY, sbw, sbh, 2);
 
@@ -2233,6 +2324,7 @@ var Home = {
       return;
     }
     if (key === 'home:start') { playSfx('start'); startGame(Home.players); }
+    if (key === 'home:ai') { playSfx('tap'); AISetupModal.open(); }
     if (key === 'home:help') { playSfx('tap'); HelpModal.open(); }
     if (key === 'home:records') { playSfx('tap'); RecordModal.open(); }
     if (key === 'home:load') {
@@ -2252,12 +2344,16 @@ var PauseModal = {
   open: function () {
     this.saved = false;
     this.visible = true;
+    // 暂停期间挂起 AI 思考：清掉待触发的 AI 回合定时器，恢复后再续
+    if (typeof AI !== 'undefined' && AI) { if (AI.timer) { clearTimeout(AI.timer); AI.timer = null; } AI.running = false; }
     this.render();
   },
   close: function () {
     SceneRoot.clickables = SceneRoot.clickables.filter(function (c) { return c.key.indexOf('pause:') !== 0; });
     if (this.group) { SceneRoot.root.remove(this.group); disposeGroup(this.group); this.group = null; }
     this.visible = false;
+    // 恢复后若轮到人机玩家，重新触发其回合
+    if (typeof AI !== 'undefined' && AI && Screen.current === 'game') AI.maybeRun();
   },
   render: function () {
     if (this.group) { SceneRoot.root.remove(this.group); disposeGroup(this.group); }
@@ -2867,6 +2963,421 @@ var RecordModal = {
   },
 };
 
+// ============================================================
+// 人机对战设置弹窗（DOM 模态，样式与玩法说明同款）
+// 中间区域配置各方位操作员：玩家 / 人机（简单·普通·困难），
+// 按人数动态启用/禁用座位方位；点击底部「开始游戏」按配置开局。
+// ============================================================
+var AI_DIRS = ['up', 'right', 'down', 'left'];
+var AI_DIR_LABEL = { up: '上', right: '右', down: '下', left: '左' };
+// 方位按钮在网格中的定位（.ai-dir-grid 内绝对定位）
+var AI_POS_CSS = {
+  up: 'top:10px;left:50%;transform:translateX(-50%)',
+  down: 'bottom:10px;left:50%;transform:translateX(-50%)',
+  left: 'left:10px;top:50%;transform:translateY(-50%)',
+  right: 'right:10px;top:50%;transform:translateY(-50%)',
+};
+// 操作员类型：0 玩家 / 1 人机·简单 / 2 人机·普通 / 3 人机·困难
+var AI_LEVELS = [
+  { v: 0, label: '玩家', cls: '' },
+  { v: 1, label: '简单', cls: 'simple' },
+  { v: 2, label: '普通', cls: 'normal' },
+  { v: 3, label: '困难', cls: 'hard' },
+];
+// 方位 → 玩家索引（与 panelForPlayer 的席位映射一致）
+function aiPlayerAt(n, dirKey) {
+  var pos = { up: 1, right: 3, down: 0, left: 2 }[dirKey];
+  for (var i = 0; i < n; i++) if (panelForPlayer(n, i) === pos) return i;
+  return -1;
+}
+// 某人数下启用的方位（顺时针：上 → 右 → 下 → 左）
+function aiDirsFor(n) {
+  return n === 2 ? ['down', 'up'] : n === 3 ? ['up', 'down', 'left'] : ['up', 'right', 'down', 'left'];
+}
+
+var AISetupModal = {
+  el: null,
+  _keyHandler: null,
+  n: 2,
+  slots: {},        // { up/right/down/left: 0|1|2|3 }
+  open: function () {
+    if (this.el) return;
+    this.n = Home.players || 2;   // 沿用首页已选择的玩家人数
+    this.resetSlots();
+    var ov = document.createElement('div');
+    ov.id = 'ai-overlay';
+    var self = this;
+    var close = function () { self.close(); };
+    ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+    this._keyHandler = function (e) { if (e.key === 'Escape' || e.key === 'Esc') close(); };
+    document.addEventListener('keydown', this._keyHandler);
+    this.el = ov;
+    document.body.appendChild(ov);
+    this._paint();
+  },
+  resetSlots: function () {
+    var n = this.n, slots = {};
+    aiDirsFor(n).forEach(function (d) {
+      // 无论 2/3/4 人，默认「下」方为真人玩家，其余方位为人机·简单
+      slots[d] = d === 'down' ? 0 : 1;
+    });
+    this.slots = slots;
+  },
+  cycle: function (d) {
+    if (this.slots[d] === undefined) return;   // 未启用方位不响应
+    this.slots[d] = (this.slots[d] + 1) % 4;
+    playSfx('tap');
+    this._paint();
+  },
+  start: function () {
+    var n = this.n;
+    var slots = {};
+    for (var k in this.slots) if (this.slots.hasOwnProperty(k)) slots[k] = this.slots[k];
+    this.close();
+    playSfx('start');
+    startGameWithAI(n, slots);
+  },
+  close: function () {
+    if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null; }
+    if (this.el) { this.el.remove(); this.el = null; }
+  },
+  _paint: function () {
+    var ov = this.el;
+    if (!ov) return;
+    var self = this;
+    ov.innerHTML = this._html();
+    ov.querySelector('#ai-close').addEventListener('click', function () { self.close(); });
+    ov.querySelectorAll('.ai-dir-btn').forEach(function (b) {
+      b.addEventListener('click', function () {
+        self.cycle(b.getAttribute('data-dir'));
+      });
+    });
+    ov.querySelector('#ai-start').addEventListener('click', function () { self.start(); });
+  },
+  _html: function () {
+    var self = this;
+    var dirBtns = AI_DIRS.map(function (d) {
+      var enabled = self.slots[d] !== undefined;
+      var lv = AI_LEVELS[enabled ? self.slots[d] : 0];
+      var txt = enabled ? (lv.v === 0 ? '玩家' : '人机·' + lv.label) : '未启用';
+      return '<button type="button" class="ai-dir-btn' + (enabled ? ' ' + lv.cls : ' disabled') + '" data-dir="' + d + '" style="' + AI_POS_CSS[d] + '">' +
+        '<span class="d">' + AI_DIR_LABEL[d] + '方</span>' + txt + '</button>';
+    }).join('');
+    return '' +
+      '<div id="ai-panel">' +
+        '<div id="ai-head"><span class="t">人机对战</span><button id="ai-close" type="button" aria-label="关闭">✕</button></div>' +
+        '<div id="ai-body">' +
+          '<div style="text-align:center;font-size:13px;color:#9fb2cc;margin-bottom:12px">当前对局 <b style="color:#f5d76e">' + this.n + ' 人</b>，请配置各方位操作员</div>' +
+          '<div class="ai-sec"><div class="ai-dir-grid">' + dirBtns + '</div></div>' +
+          '<div class="ai-sec" style="font-size:12px;color:rgba(223,232,248,.72);line-height:1.8;text-align:center">' +
+          '点击方位按钮循环切换：<b style="color:#dfe8f8">玩家</b> → <b style="color:#7ef0b8">人机·简单</b> → ' +
+          '<b style="color:#f0c95c">人机·普通</b> → <b style="color:#f2788e">人机·困难</b>。<br>人机玩家的回合将由 AI 自动操作，玩家面板左下角会显示机器人图标。' +
+          '</div>' +
+        '</div>' +
+        '<div id="ai-foot"><button id="ai-start" type="button">开始游戏</button></div>' +
+      '</div>';
+  },
+};
+
+// ============================================================
+// 人机 AI：三级难度差异化决策 + 回合自动执行（复用飞行动画）
+// ============================================================
+var AI = {
+  running: false,        // AI 正在思考/执行中（防止重复触发）
+  timer: null,           // 思考延迟定时器
+  // 进入 AI 回合：延迟一段"思考时间"后决策（难度越高思考越久，观感差异）
+  maybeRun: function () {
+    if (AI.timer) { clearTimeout(AI.timer); AI.timer = null; }   // 每次进入都清掉旧定时器，避免堆积
+    var g = G.game;
+    if (!g || g.over || g.phase === 'end') return;
+    var p = g.players[g.current];
+    if (!p.isAI) return;
+    if (AI.running || FLY.busy) {
+      // 上一段动作动画未播完（如开局发牌）：稍后重试
+      AI.timer = setTimeout(AI.maybeRun, 250);
+      return;
+    }
+    AI.running = true;
+    var lv = p.aiLevel || 1;
+    var base = 260 + lv * 220;                    // 基础延迟（难度越高稍久）
+    var delay = base + (1000 + Math.random() * 2000);   // 额外 1~3 秒随机思考等待，避免节奏过快
+    AI.timer = setTimeout(function () {
+      AI.timer = null;
+      if (PauseModal.visible) { AI.running = false; return; }   // 暂停中：放弃本次触发，恢复后重新触发
+      AI.takeTurn();
+    }, delay);
+  },
+  takeTurn: function () {
+    var g = G.game;
+    if (!g || g.over) { AI.running = false; return; }
+    var p = g.players[g.current];
+    if (!p.isAI) { AI.running = false; return; }
+    if (g.phase === 'noble-choice') { AI.chooseNoble(p); return; }
+    if (g.phase !== 'action') { AI.running = false; return; }
+    var lv = p.aiLevel || 1;
+    var move = AI.decide(g, p, lv);
+    if (!move) {
+      // 所有行动不可用：直接跳过本回合
+      playSfx('tap');
+      endTurn(g);
+      if (g.phase === 'end') { showScreen('end'); AI.running = false; }
+      else { showScreen('game'); AI.advance(); }
+      return;
+    }
+    var snap = snapshotNumbers(g);
+    playActionAnimated(g, move, function () {
+      var p2 = g.players[g.current];
+      switch (move.type) {
+        case 'take3': execTakeThree(g, p2, move.cols); break;
+        case 'take2': execTakeTwo(g, p2, move.col); break;
+        case 'buy': execBuy(g, p2, move.card, move.fromReserved); break;
+        case 'reserve': execReserve(g, p2, move.tier, move.col, move.fromDraw); break;
+      }
+      uiReset();
+      playEndTurnAnimated(g, function () {
+        if (g.phase === 'end') { showScreen('end'); AI.running = false; }
+        else { showScreen('game'); playNumberPulses(g, snap); AI.advance(); }
+      });
+    });
+  },
+  advance: function () {
+    AI.running = false;
+    var g = G.game;
+    if (!g || g.over || g.phase === 'end') return;
+    AI.maybeRun();
+  },
+  // 贵族多选：AI 自动选择。优先选与已购发展卡差距较大的贵族（"物有所值"）
+  chooseNoble: function (p) {
+    var g = G.game;
+    var ci = AI.pickNoble(g, p);
+    if (ci < 0) {
+      finishTurnCore(g);
+      if (g.phase === 'end') { showScreen('end'); AI.running = false; }
+      else { showScreen('game'); AI.advance(); }
+      return;
+    }
+    UI.pickNoble = ci;
+    playSfx('buy');
+    playNobleScoreAnim(g, g.nobleChoices[ci], function () {
+      var snapN = snapshotNumbers(g);
+      uiConfirmNoble(g);
+      if (g.phase === 'end') { showScreen('end'); AI.running = false; }
+      else { showScreen('game'); playNumberPulses(g, snapN); AI.advance(); }
+    });
+  },
+  pickNoble: function (g, p) {
+    var best = 0, bestS = -1;
+    g.nobleChoices.forEach(function (idx, ci) {
+      var n = g.nobles[idx], s = 0;
+      for (var c = 0; c < 5; c++) {
+        var gap = Math.max(0, n.req[c] - p.cards[COLORS[c]]);
+        s += gap * (n.req[c] > 0 ? 2 : 0);
+      }
+      if (s > bestS) { bestS = s; best = ci; }
+    });
+    return best;
+  },
+  // ===== 决策入口：收集全部候选动作，按难度分派 =====
+  decide: function (g, p, lv) {
+    var moves = { buy: [], take2: [], take3: [], reserve: [] };
+    for (var t = 1; t <= 3; t++) {
+      for (var c = 0; c < 4; c++) {
+        var card = tableCards(g, t, c);
+        if (card && canAfford(p, card)) moves.buy.push({ type: 'buy', card: card, fromReserved: false, tier: t, col: c });
+      }
+    }
+    p.reserved.forEach(function (rc) {
+      if (canAfford(p, rc.card)) moves.buy.push({ type: 'buy', card: rc.card, fromReserved: true, tier: rc.card.tier, col: -1 });
+    });
+    COLORS.forEach(function (cc) {
+      if (g.bank[cc] >= 4 && p.gems[cc] + 2 <= 10) moves.take2.push({ type: 'take2', col: cc });
+    });
+    var max3 = take3MaxPick(g, p);
+    if (max3 > 0) {
+      var pick3 = AI.take3Colors(g, p, lv, max3);
+      if (pick3.length) moves.take3.push({ type: 'take3', cols: pick3 });
+    }
+    if (g.gold > 0 && p.reserved.length < 3) {
+      for (var t2 = 1; t2 <= 3; t2++) {
+        for (var c2 = 0; c2 < 4; c2++) {
+          var card2 = tableCards(g, t2, c2);
+          if (card2) moves.reserve.push({ type: 'reserve', tier: t2, col: c2, fromDraw: false });
+        }
+      }
+    }
+    if (lv === 1) return AI.decideEasy(g, p, moves);
+    if (lv === 2) return AI.decideNormal(g, p, moves);
+    return AI.decideHard(g, p, moves);
+  },
+  // 拿 3 色候选：按需求度排序取前 max3 种（简单 = 随机，无目标性）
+  take3Colors: function (g, p, lv, max3) {
+    var avail = COLORS.filter(function (c) { return g.bank[c] > 0 && p.gems[c] < 10; });
+    if (!avail.length) return [];
+    var needs = AI.colorNeeds(g, p, lv);
+    avail.sort(function (a, b) { return needs[b] - needs[a]; });
+    return avail.slice(0, max3);
+  },
+  // 颜色需求度：简单 = 随机；普通 = 银行余量 + 贵族缺口；困难 = 银行余量 + 贵族缺口 + 关键牌成本缺口
+  colorNeeds: function (g, p, lv) {
+    var needs = { W: 0, B: 0, G: 0, R: 0, K: 0 };
+    if (lv === 1) {
+      COLORS.forEach(function (c) { needs[c] = Math.random(); });
+      return needs;
+    }
+    COLORS.forEach(function (c) { needs[c] = Math.max(0, 10 - g.bank[c]); });
+    g.nobles.forEach(function (n) {
+      if (n.taken) return;
+      var gap = 0;
+      for (var i = 0; i < 5; i++) gap += Math.max(0, n.req[i] - p.cards[COLORS[i]] - p.gems[COLORS[i]]);
+      if ((lv === 2 ? gap <= 6 : gap <= 4)) {
+        for (var j = 0; j < 5; j++) {
+          var c = COLORS[j];
+          needs[c] += Math.max(0, n.req[j] - p.cards[c]) * (lv === 3 ? 2 : 1);
+        }
+      }
+    });
+    if (lv === 3) {
+      AI.keyCards(g, p).forEach(function (k) {
+        for (var j = 0; j < 5; j++) {
+          var c = COLORS[j];
+          needs[c] += Math.max(0, k.card.cost[j] - p.cards[c]);
+        }
+      });
+    }
+    return needs;
+  },
+  // 高价值展示牌（困难级评估用）：≥2 分或能推进贵族
+  keyCards: function (g, p) {
+    var res = [];
+    for (var t = 1; t <= 3; t++) {
+      for (var c = 0; c < 4; c++) {
+        var card = tableCards(g, t, c);
+        if (!card) continue;
+        if (card.points >= 2 || AI.nobleProgress(p, card) > 0) res.push({ card: card, tier: t, col: c });
+      }
+    }
+    return res;
+  },
+  // 买下 card 后贵族"达成进度"的提升量
+  nobleProgress: function (p, card) {
+    return AI._nobleScore(p, card) - AI._nobleScore(p, null);
+  },
+  _nobleScore: function (p, addCard) {
+    var s = 0;
+    G.game.nobles.forEach(function (n) {
+      if (n.taken) return;
+      for (var c = 0; c < 5; c++) {
+        var have = p.cards[COLORS[c]] + (addCard && addCard.provide === COLORS[c] ? 1 : 0);
+        s += Math.min(n.req[c], have);
+      }
+    });
+    return s;
+  },
+  // 对手对该牌的购买威胁（困难级：其他玩家即将买得动则加分）
+  urgency: function (g, p, card) {
+    var u = 0;
+    g.players.forEach(function (op) {
+      if (op === p || op.isAI) return;
+      var goldNeed = 0;
+      for (var i = 0; i < 5; i++) {
+        var deficit = card.cost[i] - op.cards[COLORS[i]];
+        if (deficit > 0) goldNeed += Math.max(0, deficit - op.gems[COLORS[i]]);
+      }
+      var gap = Math.max(0, goldNeed - op.gold);
+      if (gap <= 1) u += 4;
+      else if (gap <= 3) u += 2;
+    });
+    return u;
+  },
+  // 简单：行动优先级带随机性，选牌/拿色随机，偶发保留
+  decideEasy: function (g, p, moves) {
+    var r = Math.random();
+    if (moves.buy.length && r < 0.4) return moves.buy[Math.floor(Math.random() * moves.buy.length)];
+    if (moves.take3.length && r < 0.72) return moves.take3[0];
+    if (moves.take2.length && r < 0.9) return moves.take2[Math.floor(Math.random() * moves.take2.length)];
+    if (moves.reserve.length) return moves.reserve[Math.floor(Math.random() * moves.reserve.length)];
+    if (moves.buy.length) return moves.buy[0];
+    if (moves.take3.length) return moves.take3[0];
+    if (moves.take2.length) return moves.take2[0];
+    return null;
+  },
+  // 普通：优先买"性价比好"的牌；否则按需求拿宝石；偶发保留高分牌
+  decideNormal: function (g, p, moves) {
+    if (moves.buy.length) {
+      var bestB = moves.buy[0], bestS = -1e9;
+      moves.buy.forEach(function (m) {
+        var s = m.card.points * 3 - cardCostSum(m.card);
+        if (s > bestS) { bestS = s; bestB = m; }
+      });
+      return bestB;
+    }
+    var r = Math.random();
+    if (moves.take3.length && r < 0.8) return moves.take3[0];
+    if (moves.take2.length) {
+      var needs = AI.colorNeeds(g, p, 2);
+      var best2 = moves.take2[0], bestN = -1;
+      moves.take2.forEach(function (m) { if (needs[m.col] > bestN) { bestN = needs[m.col]; best2 = m; } });
+      return best2;
+    }
+    if (moves.reserve.length && r < 0.25) {
+      var high = moves.reserve.filter(function (m) { return m.card.points >= 2; });
+      if (high.length) return high[0];
+    }
+    if (moves.take3.length) return moves.take3[0];
+    if (moves.take2.length) return moves.take2[0];
+    return null;
+  },
+  // 困难：综合评分（点数/性价比/贵族推进/对手威胁），拿宝石精确补缺，保留高价值牌
+  decideHard: function (g, p, moves) {
+    if (moves.buy.length) {
+      var bestB = moves.buy[0], bestS = -1e9;
+      moves.buy.forEach(function (m) {
+        var s = m.card.points * 5 + AI.nobleProgress(p, m.card) * 3 - cardCostSum(m.card) * 0.4 + AI.urgency(g, p, m.card);
+        if (s > bestS) { bestS = s; bestB = m; }
+      });
+      return bestB;
+    }
+    if (moves.take3.length) return moves.take3[0];
+    if (moves.take2.length) {
+      var needs = AI.colorNeeds(g, p, 3);
+      var best2 = moves.take2[0], bestN = -1;
+      moves.take2.forEach(function (m) { if (needs[m.col] > bestN) { bestN = needs[m.col]; best2 = m; } });
+      return best2;
+    }
+    if (moves.reserve.length) {
+      var bestR = moves.reserve[0], bestS2 = -1e9;
+      moves.reserve.forEach(function (m) {
+        var s = m.card.points * 4 + AI.nobleProgress(p, m.card) * 2 + AI.urgency(g, p, m.card);
+        if (s > bestS2) { bestS2 = s; bestR = m; }
+      });
+      if (bestS2 >= 4) return bestR;
+    }
+    if (moves.take2.length) return moves.take2[0];
+    return null;
+  },
+};
+
+// 按配置开局：n 人数 + slots 方位 → 操作员类型（0 玩家 / 1 简单 / 2 普通 / 3 困难）
+function startGameWithAI(n, slots) {
+  var g = newGame(n);
+  for (var k in slots) {
+    if (!slots.hasOwnProperty(k)) continue;
+    var v = slots[k];
+    if (v > 0) {
+      var pi = aiPlayerAt(n, k);
+      if (pi >= 0) { g.players[pi].isAI = true; g.players[pi].aiLevel = v; }
+    }
+  }
+  G.game = g;
+  uiReset();
+  G.game.current = Math.floor(Math.random() * n);
+  G.game.firstPlayer = G.game.current;
+  G.game.turnCount = 0;
+  G._dealAnim = true;
+  showScreen('game');
+  AI.maybeRun();   // 若随机先手是 AI，自动接上其回合（发牌动画期间会自行延后）
+}
+
 // 在指定 group 内创建 mesh（模态用）
 function mkMeshIn(tex, w, h, x, y, z, group) {
   var geo = new THREE.PlaneGeometry(w, h);
@@ -3301,7 +3812,8 @@ var GameScreen = {
     if (!g) return;
     var p = g.players[g.current];
 
-    var txt = '玩家' + (g.current + 1) + ' · ' + p.theme.name + ' 的回合';
+    var aiTag = p.isAI ? '（人机·' + (p.aiLevel === 3 ? '困难' : p.aiLevel === 2 ? '普通' : '简单') + '）' : '';
+    var txt = '玩家' + (g.current + 1) + ' · ' + p.theme.name + aiTag + ' 的回合';
     if (g.endTriggered) txt += '（终局中）';
     updateTextMesh(this.bannerMesh, txt, L.bar.banner.x, L.bar.banner.y, 17, '#f5d76e', { key: 'banner', stroke: 'rgba(0,0,0,0.5)' });
 
@@ -3347,8 +3859,9 @@ var GameScreen = {
     // 面板重绘
     this.rebuildPanels();
 
-    // 动作按钮（资源总量上限：每人最多同时持有 10 个含黄金；满 10 时不可再拿/保留，9 时不可拿2个）
-    var canAct = g.phase === 'action';
+    // 动作按钮（资源总量上限：每人最多同时持有 10 个含黄金；满 10 时不可再拿/保留，9 时不可拿2个；
+    // 人机回合按钮灰显，由 AI 自动操作）
+    var canAct = g.phase === 'action' && !p.isAI;
     var actions = uiActionFlags(g);
     var actLabels = ['拿3色', '拿2个', '购买', '保留'];
     var modes = ['take3', 'take2', 'buy', 'reserve'];
@@ -3378,8 +3891,8 @@ var GameScreen = {
     if (canExec || mustSkip) setGlow('execg', 'green', e.x, e.y, e.w, e.h, 4.6, e.rot);
     else setGlow('execg', null);
 
-    // 说明文字（窄屏时缩小字号避免与按钮重叠）
-    var msg = this.msgFor(g);
+    // 说明文字（窄屏时缩小字号避免与按钮重叠；人机回合提示 AI 思考中）
+    var msg = p.isAI ? '人机（' + (p.aiLevel === 3 ? '困难' : p.aiLevel === 2 ? '普通' : '简单') + '）思考中…' : this.msgFor(g);
     var msgSize = Math.min(13, Math.max(9, Math.floor((L.stage.w * 0.85) / Math.max(6, msg.length))));
     updateTextMesh(this.msgMesh, msg, L.bar.msg.x, L.bar.msg.y, msgSize, '#cfe0f5', { key: 'msg' });
 
@@ -3496,6 +4009,8 @@ var GameScreen = {
       PauseModal.open();
       return;
     }
+    // 人机回合：由 AI 自动执行，忽略玩家手动输入（暂停按钮除外）
+    if (g.players[g.current].isAI) return;
     // 面板上的保留牌：点击进入购买模式并选中该牌（可负担时），否则错误提示
     if (key.indexOf('reserved:') === 0) {
       if (g.phase !== 'action') return;
@@ -3611,7 +4126,7 @@ var EndScreen = {
         ctx.strokeStyle = isW ? '#f5d76e' : 'rgba(255,255,255,0.25)';
         rr(ctx, 1, 1, Ww - 2, Hh - 2, 9);
         ctx.stroke();
-        text(ctx, p.theme.name + ' 玩家' + (i + 1), 16, Hh / 2, 16, isW ? '#f5d76e' : '#cfd8e8', 'left');
+        text(ctx, p.theme.name + (p.isAI ? ' 人机' : ' 玩家') + (i + 1), 16, Hh / 2, 16, isW ? '#f5d76e' : '#cfd8e8', 'left');
         // 结算信息：分数 · 发展卡数 · 贵族卡数（窄屏自动缩小字号防溢出）
         var rfs = Math.min(14, Ww * 0.045);
         text(ctx, p.score + ' 分 · 开发 ' + playerCardsCount(p) + ' 张 · 贵族 ' + p.nobles.length + ' 个' + (isW ? '  ★' : ''), Ww - 16, Hh / 2, rfs, isW ? '#f5d76e' : '#8fa0b8', 'right');
@@ -3774,7 +4289,7 @@ function saveGameRecord(g) {
   for (var i = 0; i < g.players.length; i++) {
     var p = g.players[i];
     players.push({
-      n: p.theme.name + ' 玩家' + (i + 1),
+      n: p.theme.name + (p.isAI ? ' 人机' : ' 玩家') + (i + 1),
       c: p.theme.hex || '#cfd8e8',
       s: p.score,
       d: playerCardsCount(p),
@@ -3851,10 +4366,16 @@ function loadGame() {
       }
     }
     if (!g.startedAt) g.startedAt = Date.now();   // 旧存档/读档后从此刻起计时
+    // 人机字段迁移：老存档补默认值（全部真人）
+    g.players.forEach(function (pp) {
+      if (pp.isAI === undefined) pp.isAI = false;
+      if (pp.aiLevel === undefined) pp.aiLevel = 1;
+    });
     G.game = g;
     uiReset();
     showScreen('game');
     clearSave();          // 读档成功后清理存档记录
+    if (typeof AI !== 'undefined' && AI && AI.maybeRun) AI.maybeRun();   // 若读档后轮到人机玩家，自动接上
     return true;
   } catch (e) { clearSave(); return false; }
 }
