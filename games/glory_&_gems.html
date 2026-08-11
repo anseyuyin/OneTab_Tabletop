@@ -2789,6 +2789,7 @@ var HelpModal = {
   _keyHandler: null,
   open: function () {
     if (this.el) return;
+    this._openedAt = Date.now();   // 防误关：打开后短时间内忽略关闭请求（移动端合成 click 会落到新遮罩上）
     var ov = document.createElement('div');
     ov.id = 'help-overlay';
 
@@ -2880,6 +2881,9 @@ var HelpModal = {
     document.body.appendChild(ov);
   },
   close: function () {
+    // 防误关：打开后 350ms 内的关闭请求（如移动端合成 click 落到新遮罩上）一律忽略，
+    // 保证弹窗首次打开能正常保持；用户后续的 ✕ / 遮罩点击 / Esc 关闭不受影响
+    if (Date.now() - (this._openedAt || 0) < 350) return;
     if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null; }
     if (this.el) { this.el.remove(); this.el = null; }
   },
@@ -2895,6 +2899,7 @@ var RecordModal = {
   _keyHandler: null,
   open: function () {
     if (this.el) return;
+    this._openedAt = Date.now();   // 防误关：打开后短时间内忽略关闭请求（移动端合成 click 会落到新遮罩上）
     var recs = loadRecords();
     var ov = document.createElement('div');
     ov.id = 'record-overlay';
@@ -2958,6 +2963,9 @@ var RecordModal = {
     document.body.appendChild(ov);
   },
   close: function () {
+    // 防误关：打开后 350ms 内的关闭请求（如移动端合成 click 落到新遮罩上）一律忽略，
+    // 保证弹窗首次打开能正常保持；用户后续的 ✕ / 遮罩点击 / Esc 关闭不受影响
+    if (Date.now() - (this._openedAt || 0) < 350) return;
     if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null; }
     if (this.el) { this.el.remove(); this.el = null; }
   },
@@ -3002,6 +3010,7 @@ var AISetupModal = {
   slots: {},        // { up/right/down/left: 0|1|2|3 }
   open: function () {
     if (this.el) return;
+    this._openedAt = Date.now();   // 防误关：打开后短时间内忽略关闭请求（移动端合成 click 会落到新遮罩上）
     this.n = Home.players || 2;   // 沿用首页已选择的玩家人数
     this.resetSlots();
     var ov = document.createElement('div');
@@ -3038,6 +3047,9 @@ var AISetupModal = {
     startGameWithAI(n, slots);
   },
   close: function () {
+    // 防误关：打开后 350ms 内的关闭请求（如移动端合成 click 落到新遮罩上）一律忽略，
+    // 保证弹窗首次打开能正常保持；用户后续的 ✕ / 遮罩点击 / Esc 关闭不受影响
+    if (Date.now() - (this._openedAt || 0) < 350) return;
     if (this._keyHandler) { document.removeEventListener('keydown', this._keyHandler); this._keyHandler = null; }
     if (this.el) { this.el.remove(); this.el = null; }
   },
@@ -4439,6 +4451,7 @@ function initApp() {
   var el = renderer.domElement;
   el.addEventListener('pointerdown', function (e) {
     downX = e.clientX; downY = e.clientY; downT = Date.now();
+    unlockAudio();   // 首次按下即刻创建并解锁 AudioContext，保证后续音效立即可播放
   });
   el.addEventListener('pointerup', function (e) {
     var dx = e.clientX - downX, dy = e.clientY - downY;
@@ -4452,6 +4465,7 @@ function initApp() {
   });
   el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
+  initAudioUnlock();     // 注册首次交互解锁（canvas 与 DOM 模态的首次点击均覆盖）
   R.zoom = loadZoom();   // 读取持久化缩放值（无缓存则默认 100%）
   resize();
   showScreen('home');                       // 先构建首页，再让加载页优雅淡出（露出已就绪的场景）
@@ -4536,10 +4550,46 @@ function dispatchTap(wx, wy) {
 
 // ---------- 音效（WebAudio 合成，无外部资源） ----------
 var AC = null;
+var _ACUnlock = false;
+// 创建并解锁 AudioContext（必须在用户手势内调用）。
+// 浏览器自动播放策略：首次 new AudioContext() 处于 suspended，且 resume() 为异步，
+// 若在触发音效时才创建/恢复，首次播放必然无声（需第二次点击才能发声）。
+// 因此改为在首次 pointerdown 手势内提前解锁；iOS Safari 还需播放一段静音 buffer 才真正激活。
+function unlockAudio() {
+  try {
+    if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') {
+      var p = AC.resume && AC.resume();
+      // iOS 兼容：真实调度一个近静音 buffer，确保上下文真正激活（仅需一次）
+      if (!_ACUnlock) {
+        _ACUnlock = true;
+        var buf = AC.createBuffer(1, 1, 44100);
+        var src = AC.createBufferSource();
+        src.buffer = buf;
+        var g = AC.createGain();
+        g.gain.value = 0.0001;
+        src.connect(g); g.connect(AC.destination);
+        src.start(0);
+      }
+      if (p && p.then) p.catch(function () {});
+    }
+  } catch (e) { /* 忽略音频错误 */ }
+}
+// 首次用户交互时解锁（覆盖 canvas 外的 DOM 模态按钮等所有首次点击），一次性
+function initAudioUnlock() {
+  var unlock = function () {
+    unlockAudio();
+    document.removeEventListener('pointerdown', unlock);
+    document.removeEventListener('touchstart', unlock);
+    document.removeEventListener('touchend', unlock);
+  };
+  document.addEventListener('pointerdown', unlock);
+  document.addEventListener('touchstart', unlock);
+  document.addEventListener('touchend', unlock);
+}
 function playSfx(type, delaySec, volScale) {
   try {
-    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
-    if (AC.state === 'suspended') AC.resume();
+    if (!AC) { unlockAudio(); if (!AC) return; }   // 兜底：确保上下文已创建并已解锁
     var t = AC.currentTime + (delaySec || 0);   // delaySec：延迟发声（与飞行动画 delay 同步）
     var vs = volScale || 1;                     // volScale：音量倍率（密集场景降噪用）
     if (type === 'win') {
