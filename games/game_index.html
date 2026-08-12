@@ -327,22 +327,70 @@ function paintGem(ctx, cx, cy, s, type) {
 
 function drawGloryPreview(canvas, w, h) {
   var ctx = canvas.getContext("2d");
-  /* 背景 */
-  var bg = ctx.createLinearGradient(0, 0, w * 0.9, h);
-  bg.addColorStop(0, "#0c111e"); bg.addColorStop(0.6, "#16223d"); bg.addColorStop(1, "#1d2a4a");
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
-  var halo = ctx.createRadialGradient(w * 0.5, h * 0.44, 0, w * 0.5, h * 0.44, w * 0.55);
-  halo.addColorStop(0, "rgba(245,215,110,.16)"); halo.addColorStop(1, "rgba(245,215,110,0)");
-  ctx.fillStyle = halo; ctx.fillRect(0, 0, w, h);
-  paintParticles(ctx, w, h, 7, 26, "rgba(245,215,110,1)", 1.6);
-  /* 三颗宝石 */
-  var cy = h * 0.5, s = h * 0.24;
-  paintGem(ctx, w * 0.5 - s * 1.55, cy, s, "diamond");
-  paintGem(ctx, w * 0.5, cy, s, "sapphire");
-  paintGem(ctx, w * 0.5 + s * 1.55, cy, s, "ruby");
-  /* 底部金色细线 */
-  ctx.fillStyle = "rgba(245,215,110,.5)";
-  ctx.fillRect(w * 0.08, h - 3, w * 0.84, 1.5);
+
+  /* 背景：与游戏加载页一致的深蓝金奢华氛围（叠层光晕） */
+  ctx.fillStyle = "#0c111e";
+  ctx.fillRect(0, 0, w, h);
+  var top = ctx.createRadialGradient(w * 0.5, h * 0.0, 0, w * 0.5, h * 0.0, w * 0.62);
+  top.addColorStop(0, "rgba(63,127,212,0.30)"); top.addColorStop(1, "rgba(63,127,212,0)");
+  ctx.fillStyle = top; ctx.fillRect(0, 0, w, h);
+  var right = ctx.createRadialGradient(w * 0.98, h * 1.08, 0, w * 0.98, h * 1.08, w * 0.55);
+  right.addColorStop(0, "rgba(240,201,60,0.14)"); right.addColorStop(1, "rgba(240,201,60,0)");
+  ctx.fillStyle = right; ctx.fillRect(0, 0, w, h);
+  var left = ctx.createRadialGradient(w * 0.02, h * 1.06, 0, w * 0.02, h * 1.06, w * 0.5);
+  left.addColorStop(0, "rgba(70,96,150,0.32)"); left.addColorStop(1, "rgba(70,96,150,0)");
+  ctx.fillStyle = left; ctx.fillRect(0, 0, w, h);
+
+  /* 星光粒子 */
+  paintParticles(ctx, w, h, 7, 24, "rgba(245,215,110,1)", 1.5);
+
+  /* 宝石组：中央大钻石（金色光环）+ 两侧小宝石，呼应加载页的 💎 主角 */
+  var cx = w * 0.5, cy = h * 0.28, s = h * 0.17;
+  var aura = ctx.createRadialGradient(cx, cy, s * 0.2, cx, cy, s * 2.6);
+  aura.addColorStop(0, "rgba(245,215,110,0.32)");
+  aura.addColorStop(1, "rgba(245,215,110,0)");
+  ctx.fillStyle = aura;
+  ctx.beginPath(); ctx.arc(cx, cy, s * 2.6, 0, Math.PI * 2); ctx.fill();
+  paintGem(ctx, cx - s * 2.05, cy + s * 0.35, s * 0.62, "sapphire");
+  paintGem(ctx, cx + s * 2.05, cy + s * 0.35, s * 0.62, "ruby");
+  paintGem(ctx, cx, cy, s, "diamond");
+
+  /* 标题：荣光宝石商（金色渐变 + 光晕，同加载页 .l-title 字色） */
+  var titleSize = Math.max(15, Math.min(h * 0.205, 32));
+  var titleY = h * 0.65;
+  var titleGrad = ctx.createLinearGradient(0, titleY - titleSize, 0, titleY);
+  titleGrad.addColorStop(0, "#fbeec2");
+  titleGrad.addColorStop(0.55, "#f5d76e");
+  titleGrad.addColorStop(1, "#d9a63c");
+  ctx.save();
+  ctx.shadowColor = "rgba(245,215,110,0.45)";
+  ctx.shadowBlur = titleSize * 0.45;
+  ctx.font = "700 " + titleSize + 'px "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = titleGrad;
+  ctx.fillText("荣光宝石商", cx, titleY);
+  ctx.restore();
+
+  /* 副标题 SPLENDOR（字距拉开的半透明白色小字，同加载页 .sub） */
+  var subSize = Math.max(9, h * 0.082);
+  ctx.font = "400 " + subSize + 'px "PingFang SC",sans-serif';
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,255,255,0.40)";
+  ctx.fillText("S P L E N D O R", cx, h * 0.81);
+
+  /* 底部金色细线（渐变淡出 + 微光，呼应加载页进度条） */
+  var lineGrad = ctx.createLinearGradient(0, 0, w, 0);
+  lineGrad.addColorStop(0, "rgba(245,215,110,0)");
+  lineGrad.addColorStop(0.16, "rgba(245,215,110,0.9)");
+  lineGrad.addColorStop(0.84, "rgba(245,215,110,0.9)");
+  lineGrad.addColorStop(1, "rgba(245,215,110,0)");
+  ctx.save();
+  ctx.shadowColor = "rgba(245,215,110,0.6)";
+  ctx.shadowBlur = 4;
+  ctx.fillStyle = lineGrad;
+  ctx.fillRect(w * 0.10, h - 3, w * 0.80, 1.6);
+  ctx.restore();
 }
 
 function drawSpiritPreview(canvas, w, h) {
