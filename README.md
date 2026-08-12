@@ -1,11 +1,17 @@
-# OneTab_Tabletop
+# 单页桌游集 OneTab Tabletop
 
 ✨ 轻量级 HTML 桌游集。坚持「一游戏一文件」原则，所有样式与逻辑零依赖内联。专为移动端多人场景设计，强调快速开局与亲密互动，让数字桌游回归线下面对面的温度。
 
 ✨ A lightweight collection of HTML board games built on a "one game, one file" philosophy — zero external dependencies, fully self-contained, and mobile-first. Designed for local multiplayer on a single tablet or phone, it puts the warmth of face-to-face tabletop gaming back into your browser.
 
-> **One Device. Many Players. Infinite Fun.**
 > **一台设备，三五好友，无限欢乐。**
+> **One Device. Many Players. Infinite Fun.**
+
+---
+
+## 在线试玩 Play Online
+
+**[启动游戏菜单](https://anseyuyin.github.io/OneTab_Tabletop/games/game_index.html)** — 通过 GitHub Pages 托管，无需下载安装，打开浏览器即可游玩。
 
 ---
 
@@ -21,9 +27,17 @@
 
 ## 游戏目录 Games
 
+当前收录：**1 款成品** + **1 款设计中**。
+
+### 📋 游戏菜单 Game Menu
+
+> `games/game_index.html`
+
+所有游戏的统一入口：卡片式展示全部已实现游戏，支持搜索与筛选，移动端友好。
+
 ### ✅ 荣光宝石商 Glory & Gems
 
-> `games/glory_&_gems.html`（约 800KB，单文件）
+> `games/glory_&_gems.html`（约 800 KiB / 819 KB，单文件）
 
 一款 2~4 人同设备轮流的宝石商人桌面游戏。收集宝石、购买发展卡、吸引贵族，率先获得 15 分并完成本轮者获胜。
 
@@ -44,13 +58,16 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/<your-name>/OneTab_Tabletop.git
+git clone https://github.com/anseyuyin/OneTab_Tabletop.git
 
-# 直接双击打开任意游戏即可游玩
+# 用浏览器打开游戏菜单，浏览并启动所有游戏
+games/game_index.html
+
+# 或直接双击任意单文件游戏游玩
 games/glory_&_gems.html
 ```
 
-或用浏览器打开 `games/` 目录下的 HTML 文件，无需任何依赖与配置。
+无需任何依赖与配置，浏览器打开即可。
 
 ---
 
@@ -59,10 +76,13 @@ games/glory_&_gems.html
 ```
 OneTab_Tabletop/
 ├── games/                      # 已实现的单文件游戏
+│   ├── game_index.html         # 游戏菜单（所有游戏的统一入口）
 │   └── glory_&_gems.html       # 《荣光宝石商》单文件成品
 ├── docs/                       # 设计文档
 │   ├── glory_&_gems/           # 《荣光宝石商》概念设计与规则说明
+│   │   └── conceptual design.md
 │   └── spirit_stone_clash/     # 《灵石争锋》概念设计
+│       └── conceptual design.md
 ├── LICENSE                     # MIT License
 └── README.md
 ```
@@ -72,6 +92,11 @@ OneTab_Tabletop/
 ## 设计文档 Design Docs
 
 新游戏遵循「先设计、后实现」的流程，概念文档统一存放于 `docs/<game_name>/conceptual design.md`，包含世界观设定、核心机制映射、卡牌与数值细化等。
+
+已收录的设计文档：
+
+- `docs/glory_&_gems/conceptual design.md` — 《荣光宝石商》
+- `docs/spirit_stone_clash/conceptual design.md` — 《灵石争锋》
 
 ---
 
