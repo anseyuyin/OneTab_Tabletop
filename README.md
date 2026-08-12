@@ -11,7 +11,9 @@
 
 ## 在线试玩 Play Online
 
-**[启动游戏菜单](https://anseyuyin.github.io/OneTab_Tabletop/games/game_index.html)** — 通过 GitHub Pages 托管，无需下载安装，打开浏览器即可游玩。
+<a href="https://anseyuyin.github.io/OneTab_Tabletop/games/game_index.html"><img src="https://img.shields.io/badge/🎲_启动游戏菜单-点击试玩-brightgreen?style=for-the-badge" alt="启动游戏菜单"></a>
+
+通过 GitHub Pages 托管，无需下载安装，打开浏览器即可游玩。
 
 ---
 
