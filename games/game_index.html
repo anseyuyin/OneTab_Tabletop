@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0c111e">
+<title>OneTab 桌游菜单 · 一台设备，三五好友，无限欢乐</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; min-height: 100%;
+    background:
+      radial-gradient(900px 480px at 50% -10%, rgba(63,127,212,0.16), transparent 60%),
+      radial-gradient(700px 420px at 100% 108%, rgba(240,201,60,0.08), transparent 60%),
+      #0c111e;
+    color: #dfe8f8;
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    touch-action: manipulation;
+  }
+  body {
+    display: flex; flex-direction: column;
+    min-height: 100dvh;
+    padding: calc(12px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom));
+  }
+
+  /* ===== 顶部 ===== */
+  .top { flex-shrink: 0; margin-bottom: 14px; }
+  .brand { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 14px; }
+  .brand-mark { font-size: 40px; line-height: 1; filter: drop-shadow(0 0 18px rgba(245,215,110,0.35)); }
+  .brand-title {
+    margin-top: 8px; font-size: 26px; font-weight: 700; letter-spacing: 4px; color: #f2d989;
+    text-shadow: 0 0 22px rgba(245,215,110,0.25);
+  }
+  .brand-title em { font-style: normal; color: #dfe8f8; font-size: 15px; letter-spacing: 6px; margin-left: 6px; }
+  .slogan { margin-top: 6px; font-size: 12px; letter-spacing: 3px; color: rgba(255,255,255,.42); }
+
+  /* ===== 搜索与筛选 ===== */
+  .toolbar { display: flex; flex-direction: column; gap: 10px; }
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    background: #151d2e; border: 1px solid #2b3a58; border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .search:focus-within { border-color: #f5d76e; box-shadow: 0 0 0 3px rgba(245,215,110,.12); }
+  :focus-visible { outline: 2px solid #f5d76e; outline-offset: 2px; }
+  .search-icon { font-size: 15px; opacity: .6; }
+  .search input {
+    flex: 1; min-width: 0; background: none; border: none; outline: none;
+    color: #dfe8f8; font-size: 16px; font-family: inherit; letter-spacing: 1px;
+    -webkit-user-select: text; user-select: text;
+  }
+  .search input::placeholder { color: rgba(255,255,255,.3); }
+  .search-clear {
+    border: none; background: rgba(255,255,255,.1); color: #dfe8f8;
+    width: 22px; height: 22px; border-radius: 50%;
+    font-size: 12px; line-height: 1; flex-shrink: 0;
+  }
+  .search-clear:active { background: rgba(255,255,255,.25); }
+  .filters { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #151d2e; border: 1px solid #2b3a58; color: #aeb9cc;
+    font-size: 13px; font-family: inherit; letter-spacing: 1px;
+    padding: 8px 14px; border-radius: 999px; cursor: pointer;
+    transition: all .18s ease;
+  }
+  .chip .star { color: rgba(255,255,255,.35); font-size: 14px; }
+  .chip.on { background: rgba(245,215,110,.14); border-color: #f5d76e; color: #f5d76e; }
+  .chip.on .star { color: #f5d76e; text-shadow: 0 0 10px rgba(245,215,110,.6); }
+  .count { font-size: 12px; color: rgba(255,255,255,.4); letter-spacing: 1px; }
+
+  /* ===== 游戏卡片 ===== */
+  .game-list {
+    flex: 1; display: flex; flex-direction: column; gap: 14px;
+    padding-bottom: 4px;
+  }
+  .card {
+    position: relative; overflow: hidden;
+    background: #151d2e; border: 1px solid #2b3a58; border-radius: 16px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.35);
+    transition: transform .12s ease, border-color .2s ease;
+  }
+  .card:active { transform: scale(.985); }
+  .card.ready { border-color: #31426a; }
+  .card.soon { opacity: .82; border-style: dashed; }
+  .card .preview { position: relative; width: 100%; height: 150px; background: #0a0f1c; }
+  .card .preview canvas { display: block; width: 100%; height: 100%; }
+  .card.soon .preview::after {
+    content: "设计中"; position: absolute; top: 10px; left: 10px;
+    background: rgba(10,15,28,.72); border: 1px solid rgba(255,255,255,.18);
+    color: #aeb9cc; font-size: 11px; letter-spacing: 3px;
+    padding: 4px 10px; border-radius: 999px;
+  }
+  .fav {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.25);
+    background: rgba(10,15,28,.6); backdrop-filter: blur(4px);
+    color: rgba(255,255,255,.65); font-size: 19px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: all .18s ease;
+  }
+  .fav.on { color: #f5d76e; border-color: rgba(245,215,110,.7); text-shadow: 0 0 12px rgba(245,215,110,.8); }
+  .fav:active { transform: scale(.86); }
+  .card .info { padding: 12px 14px 14px; }
+  .card .name { font-size: 19px; font-weight: 700; color: #f2f6ff; letter-spacing: 1px; }
+  .card .name-en { font-size: 12px; font-weight: 400; color: rgba(255,255,255,.4); letter-spacing: 1px; margin-left: 8px; }
+  .card .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .card .tag {
+    font-size: 11px; letter-spacing: 1px; color: #9fc0ff;
+    background: rgba(63,127,212,.14); border: 1px solid rgba(63,127,212,.35);
+    padding: 3px 9px; border-radius: 999px;
+  }
+  .card.soon .tag { color: #b9a5d8; background: rgba(140,110,200,.12); border-color: rgba(140,110,200,.35); }
+  .card .desc {
+    margin-top: 9px; font-size: 13px; line-height: 1.7; color: #aeb9cc;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .card .actions { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  .play {
+    flex: 1; text-align: center; text-decoration: none;
+    display: inline-block; padding: 11px 0; border-radius: 12px;
+    background: linear-gradient(135deg, #f5d76e, #e0b24d); color: #241a05;
+    font-size: 15px; font-weight: 700; letter-spacing: 4px;
+    box-shadow: 0 4px 16px rgba(245,215,110,.25);
+  }
+  .play:active { transform: scale(.97); filter: brightness(1.06); }
+  .play .go { font-size: 12px; margin-left: 2px; }
+  .soon-badge {
+    flex: 1; text-align: center; padding: 11px 0; border-radius: 12px;
+    background: rgba(255,255,255,.06); border: 1px dashed rgba(255,255,255,.2);
+    color: #8b96a8; font-size: 14px; letter-spacing: 4px;
+  }
+
+  /* ===== 空状态 / 页脚 ===== */
+  .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 60px 0; color: rgba(255,255,255,.4); }
+  .empty .big { font-size: 44px; }
+  .empty p { font-size: 14px; letter-spacing: 2px; }
+  .btn-ghost {
+    border: 1px solid #2b3a58; background: #151d2e; color: #aeb9cc;
+    font-size: 13px; font-family: inherit; letter-spacing: 2px;
+    padding: 9px 18px; border-radius: 999px;
+  }
+  .btn-ghost:active { background: #1d2940; }
+  .foot {
+    flex-shrink: 0; margin-top: 14px; text-align: center;
+    font-size: 11px; color: rgba(255,255,255,.32); letter-spacing: 1px; line-height: 1.8;
+  }
+
+  /* ===== 横屏 / 宽屏：两列 ===== */
+  @media (min-width: 640px) {
+    body { padding-left: 20px; padding-right: 20px; }
+    .game-list { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-content: start; }
+    .card .preview { height: 170px; }
+    .toolbar { flex-direction: row; align-items: center; justify-content: space-between; }
+    .search { flex: 1; max-width: 420px; }
+    .filters { flex-shrink: 0; }
+  }
+  @media (min-width: 1024px) {
+    body { max-width: 1000px; margin: 0 auto; }
+    .game-list { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <span class="brand-mark">🎲</span>
+    <h1 class="brand-title">OneTab<em>桌游菜单</em></h1>
+    <p class="slogan">一台设备，三五好友，无限欢乐。</p>
+  </div>
+  <div class="toolbar">
+    <div class="search">
+      <span class="search-icon">🔍</span>
+      <input id="searchInput" type="search" placeholder="搜索游戏（中文 / 英文名）" autocomplete="off" enterkeyhint="search" aria-label="搜索游戏">
+      <button id="searchClear" class="search-clear" hidden aria-label="清空搜索">✕</button>
+    </div>
+    <div class="filters">
+      <button id="favToggle" class="chip" aria-pressed="false"><span class="star">★</span>只看收藏</button>
+      <span id="gameCount" class="count" aria-live="polite"></span>
+    </div>
+  </div>
+</header>
+
+<main id="gameList" class="game-list"></main>
+
+<div id="empty" class="empty" hidden>
+  <span class="big">😶</span>
+  <p id="emptyText">没有找到匹配的游戏</p>
+  <button id="emptyReset" class="btn-ghost">清空搜索</button>
+</div>
+
+<footer class="foot">
+  <p>点击卡片进入游戏 · 点 ☆ 收藏本机保存 · 搜索支持中文 / 英文名</p>
+</footer>
+
+<script>
+"use strict";
+
+/* ================================================================
+ * 游戏数据（新增游戏时在此登记即可，文件与菜单同目录）
+ * ================================================================ */
+var GAMES = [
+  {
+    id: "glory_gems",
+    file: "glory_&_gems.html",
+    name: "荣光宝石商",
+    nameEn: "Glory & Gems",
+    desc: "2~4 人同屏轮流游玩的宝石商人桌游：收集宝石、购买发展卡、吸引贵族，率先获得 15 分并完成本轮者获胜。支持人机对战、对局记录回看。",
+    tags: ["2-4人", "回合制", "策略", "有AI"],
+    status: "ready",
+    theme: "glory"
+  },
+  {
+    id: "spirit_stone_clash",
+    file: null,
+    name: "灵石争锋",
+    nameEn: "Spirit Stone Clash",
+    desc: "修仙主题的宝石商人变体：集五行灵石、修功法法宝、渡劫飞升。目前处于概念设计阶段。",
+    tags: ["设计中", "修仙"],
+    status: "soon",
+    theme: "spirit"
+  }
+];
+
+var FAV_KEY = "onetab_tabletop_favs_v1";
+
+/* ---------------- 纯逻辑（可独立测试） ---------------- */
+
+function getStorage() {
+  try { return window.localStorage; } catch (e) { return null; }
+}
+
+function loadFavs(storage) {
+  if (!storage) return [];
+  try {
+    var raw = storage.getItem(FAV_KEY);
+    var arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter(function (x) { return typeof x === "string"; }) : [];
+  } catch (e) { return []; }
+}
+
+function saveFavs(storage, favs) {
+  if (!storage) return;
+  try { storage.setItem(FAV_KEY, JSON.stringify(favs)); } catch (e) { /* 隐私模式等场景下静默失败 */ }
+}
+
+function toggleFav(favs, id) {
+  var idx = favs.indexOf(id);
+  if (idx >= 0) { favs.splice(idx, 1); return false; }
+  favs.push(id); return true;
+}
+
+function normalize(s) {
+  return String(s).toLowerCase().replace(/\s+/g, "");
+}
+
+function filterGames(games, query, favOnly, favs) {
+  var q = normalize(query || "");
+  return games.filter(function (g) {
+    if (favOnly && favs.indexOf(g.id) < 0) return false;
+    if (!q) return true;
+    return normalize(g.name).indexOf(q) >= 0 ||
+           normalize(g.nameEn).indexOf(q) >= 0 ||
+           g.tags.some(function (t) { return normalize(t).indexOf(q) >= 0; });
+  });
+}
+
+/* ---------------- 预览绘制（Canvas 运行时绘制，零图片资源） ---------------- */
+
+function makeRng(seed) {
+  var s = seed >>> 0;
+  return function () {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function paintParticles(ctx, w, h, seed, count, color, maxR) {
+  var rng = makeRng(seed);
+  for (var i = 0; i < count; i++) {
+    var x = rng() * w, y = rng() * h, r = 0.6 + rng() * maxR, a = 0.08 + rng() * 0.25;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = a;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function paintGem(ctx, cx, cy, s, type) {
+  if (type === "diamond") {
+    /* 钻石：菱形 + 顶部切面高光 */
+    ctx.save();
+    ctx.shadowColor = "rgba(238,242,255,.55)"; ctx.shadowBlur = s * 0.9;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s * 0.72, cy); ctx.lineTo(cx, cy + s); ctx.lineTo(cx - s * 0.72, cy);
+    ctx.closePath();
+    ctx.fillStyle = "#eef2ff"; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#b9c6e8";
+    ctx.beginPath(); ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s * 0.72, cy); ctx.lineTo(cx, cy + s * 0.42); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath(); ctx.moveTo(cx - s * 0.34, cy - s * 0.5); ctx.lineTo(cx - s * 0.18, cy - s * 0.66); ctx.lineTo(cx - s * 0.06, cy - s * 0.44); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  } else {
+    /* 圆形宝石：径向渐变 + 高光 */
+    var colors = { sapphire: ["#8ab0ff", "#3a63d8"], ruby: ["#ff8a7a", "#c23333"], emerald: ["#7de0a0", "#1f9d5c"], gold: ["#ffe9a8", "#d9a628"] };
+    var c = colors[type] || colors.gold;
+    var g = ctx.createRadialGradient(cx - s * 0.3, cy - s * 0.35, s * 0.1, cx, cy, s);
+    g.addColorStop(0, c[0]); g.addColorStop(1, c[1]);
+    ctx.save();
+    ctx.shadowColor = "rgba(255,255,255,.35)"; ctx.shadowBlur = s * 0.8;
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, s * 0.68, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,.75)";
+    ctx.beginPath(); ctx.ellipse(cx - s * 0.26, cy - s * 0.34, s * 0.2, s * 0.12, -0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawGloryPreview(canvas, w, h) {
+  var ctx = canvas.getContext("2d");
+  /* 背景 */
+  var bg = ctx.createLinearGradient(0, 0, w * 0.9, h);
+  bg.addColorStop(0, "#0c111e"); bg.addColorStop(0.6, "#16223d"); bg.addColorStop(1, "#1d2a4a");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+  var halo = ctx.createRadialGradient(w * 0.5, h * 0.44, 0, w * 0.5, h * 0.44, w * 0.55);
+  halo.addColorStop(0, "rgba(245,215,110,.16)"); halo.addColorStop(1, "rgba(245,215,110,0)");
+  ctx.fillStyle = halo; ctx.fillRect(0, 0, w, h);
+  paintParticles(ctx, w, h, 7, 26, "rgba(245,215,110,1)", 1.6);
+  /* 三颗宝石 */
+  var cy = h * 0.5, s = h * 0.24;
+  paintGem(ctx, w * 0.5 - s * 1.55, cy, s, "diamond");
+  paintGem(ctx, w * 0.5, cy, s, "sapphire");
+  paintGem(ctx, w * 0.5 + s * 1.55, cy, s, "ruby");
+  /* 底部金色细线 */
+  ctx.fillStyle = "rgba(245,215,110,.5)";
+  ctx.fillRect(w * 0.08, h - 3, w * 0.84, 1.5);
+}
+
+function drawSpiritPreview(canvas, w, h) {
+  var ctx = canvas.getContext("2d");
+  var bg = ctx.createLinearGradient(0, 0, w * 0.85, h);
+  bg.addColorStop(0, "#0d1026"); bg.addColorStop(0.55, "#1a1433"); bg.addColorStop(1, "#261640");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+  var halo = ctx.createRadialGradient(w * 0.5, h * 0.48, 0, w * 0.5, h * 0.48, w * 0.55);
+  halo.addColorStop(0, "rgba(150,110,255,.18)"); halo.addColorStop(1, "rgba(150,110,255,0)");
+  ctx.fillStyle = halo; ctx.fillRect(0, 0, w, h);
+  paintParticles(ctx, w, h, 21, 24, "rgba(170,140,255,1)", 1.5);
+  /* 五色灵石环绕 */
+  var colors = ["#f0c94c", "#6dd48a", "#5aa9ff", "#ff6b52", "#c99a6b"];
+  var cx = w * 0.5, cy = h * 0.5, R = Math.min(w, h) * 0.21, rs = Math.min(w, h) * 0.085;
+  for (var i = 0; i < 5; i++) {
+    var a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+    var x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R;
+    ctx.save();
+    ctx.shadowColor = colors[i]; ctx.shadowBlur = rs * 1.1;
+    var g = ctx.createRadialGradient(x - rs * 0.3, y - rs * 0.3, rs * 0.1, x, y, rs);
+    g.addColorStop(0, "#ffffff"); g.addColorStop(0.45, colors[i]); g.addColorStop(1, colors[i]);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, rs * 0.72, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  /* 中心太极（道韵） */
+  var tr = Math.min(w, h) * 0.075, tx = cx, ty = cy;
+  ctx.save();
+  ctx.shadowColor = "rgba(230,225,255,.7)"; ctx.shadowBlur = tr * 1.2;
+  ctx.beginPath(); ctx.arc(tx, ty, tr, 0, Math.PI * 2); ctx.fillStyle = "#f2efff"; ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(tx, ty, tr, 0, Math.PI); ctx.fillStyle = "#2a2440"; ctx.fill();
+  ctx.beginPath(); ctx.arc(tx, ty - tr / 2, tr / 2, 0, Math.PI * 2); ctx.fillStyle = "#2a2440"; ctx.fill();
+  ctx.beginPath(); ctx.arc(tx, ty + tr / 2, tr / 2, 0, Math.PI * 2); ctx.fillStyle = "#f2efff"; ctx.fill();
+  ctx.beginPath(); ctx.arc(tx, ty - tr / 2, tr * 0.13, 0, Math.PI * 2); ctx.fillStyle = "#f2efff"; ctx.fill();
+  ctx.beginPath(); ctx.arc(tx, ty + tr / 2, tr * 0.13, 0, Math.PI * 2); ctx.fillStyle = "#2a2440"; ctx.fill();
+  ctx.restore();
+  /* 底部细线 */
+  ctx.fillStyle = "rgba(170,140,255,.5)";
+  ctx.fillRect(w * 0.08, h - 3, w * 0.84, 1.5);
+}
+
+function drawPreview(canvas, theme, w, h) {
+  if (theme === "spirit") drawSpiritPreview(canvas, w, h);
+  else drawGloryPreview(canvas, w, h);
+}
+
+/* ---------------- 页面渲染与交互 ---------------- */
+
+function buildCard(g, favs) {
+  var card = document.createElement("article");
+  card.className = "card " + g.status;
+  card.dataset.id = g.id;
+
+  var prev = document.createElement("div");
+  prev.className = "preview";
+  var cv = document.createElement("canvas");
+  prev.appendChild(cv);
+
+  var favBtn = document.createElement("button");
+  favBtn.className = "fav" + (favs.indexOf(g.id) >= 0 ? " on" : "");
+  favBtn.textContent = favs.indexOf(g.id) >= 0 ? "★" : "☆";
+  favBtn.setAttribute("aria-label", (favs.indexOf(g.id) >= 0 ? "取消收藏 " : "收藏 ") + g.name);
+  favBtn.setAttribute("aria-pressed", favs.indexOf(g.id) >= 0 ? "true" : "false");
+
+  var info = document.createElement("div");
+  info.className = "info";
+
+  var name = document.createElement("h2");
+  name.className = "name";
+  name.appendChild(document.createTextNode(g.name));
+  var en = document.createElement("span");
+  en.className = "name-en";
+  en.textContent = g.nameEn;
+  name.appendChild(en);
+
+  var tags = document.createElement("div");
+  tags.className = "tags";
+  g.tags.forEach(function (t) {
+    var s = document.createElement("span");
+    s.className = "tag";
+    s.textContent = t;
+    tags.appendChild(s);
+  });
+
+  var desc = document.createElement("p");
+  desc.className = "desc";
+  desc.textContent = g.desc;
+
+  var actions = document.createElement("div");
+  actions.className = "actions";
+  if (g.status === "ready") {
+    var a = document.createElement("a");
+    a.className = "play";
+    a.href = g.file;
+    a.appendChild(document.createTextNode("开始游戏"));
+    var go = document.createElement("span");
+    go.className = "go";
+    go.textContent = "▶";
+    a.appendChild(go);
+    actions.appendChild(a);
+  } else {
+    var b = document.createElement("span");
+    b.className = "soon-badge";
+    b.textContent = "即将推出";
+    actions.appendChild(b);
+  }
+
+  info.appendChild(name);
+  info.appendChild(tags);
+  info.appendChild(desc);
+  info.appendChild(actions);
+  card.appendChild(prev);
+  card.appendChild(favBtn);
+  card.appendChild(info);
+
+  /* 点击卡片（排除收藏按钮 / 链接区域）进入游戏 */
+  card.addEventListener("click", function (e) {
+    if (e.target.closest && e.target.closest("a, button")) return;
+    if (g.status === "ready" && g.file) location.href = g.file;
+  });
+  favBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var isOn = toggleFav(favs, g.id);
+    saveFavs(getStorage(), favs);
+    favBtn.classList.toggle("on", isOn);
+    favBtn.textContent = isOn ? "★" : "☆";
+    favBtn.setAttribute("aria-pressed", isOn ? "true" : "false");
+    refresh();
+  });
+
+  return { card: card, canvas: cv };
+}
+
+function paintAll() {
+  var cards = document.querySelectorAll(".card");
+  cards.forEach(function (card) {
+    var id = card.dataset.id;
+    var g = GAMES.find(function (x) { return x.id === id; });
+    var cv = card.querySelector("canvas");
+    if (!g || !cv) return;
+    var w = cv.clientWidth, h = cv.clientHeight;
+    if (w <= 0 || h <= 0) return;
+    var dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    var ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawPreview(cv, g.theme, w, h);
+  });
+}
+
+function refresh() {
+  var favs = loadFavs(getStorage());
+  var query = document.getElementById("searchInput").value;
+  var favOnly = document.getElementById("favToggle").classList.contains("on");
+  var list = filterGames(GAMES, query, favOnly, favs);
+  var container = document.getElementById("gameList");
+
+  /* 增量渲染：仅重建差异部分 */
+  var seen = {};
+  list.forEach(function (g) {
+    seen[g.id] = true;
+    var existing = container.querySelector('.card[data-id="' + g.id + '"]');
+    if (!existing) {
+      var built = buildCard(g, favs);
+      container.appendChild(built.card);
+    } else {
+      /* 更新收藏星标状态 */
+      var isOn = favs.indexOf(g.id) >= 0;
+      var btn = existing.querySelector(".fav");
+      btn.classList.toggle("on", isOn);
+      btn.textContent = isOn ? "★" : "☆";
+      btn.setAttribute("aria-pressed", isOn ? "true" : "false");
+      btn.setAttribute("aria-label", (isOn ? "取消收藏 " : "收藏 ") + g.name);
+    }
+  });
+  Array.prototype.slice.call(container.querySelectorAll(".card")).forEach(function (el) {
+    if (!seen[el.dataset.id]) el.remove();
+  });
+
+  /* 计数与空状态 */
+  var favCount = favs.length;
+  document.getElementById("gameCount").textContent =
+    "共 " + list.length + " 款 · 已收藏 " + favCount;
+  var empty = document.getElementById("empty");
+  empty.hidden = list.length > 0;
+  document.getElementById("emptyText").textContent =
+    favOnly ? "收藏夹还是空的，去点卡片上的 ☆ 吧" : "没有找到匹配的游戏";
+  document.getElementById("emptyReset").hidden = !query && !favOnly;
+
+  paintAll();
+}
+
+function init() {
+  var input = document.getElementById("searchInput");
+  var clear = document.getElementById("searchClear");
+  var favToggle = document.getElementById("favToggle");
+  var emptyReset = document.getElementById("emptyReset");
+
+  input.addEventListener("input", function () {
+    clear.hidden = !input.value;
+    refresh();
+  });
+  clear.addEventListener("click", function () {
+    input.value = "";
+    clear.hidden = true;
+    refresh();
+    input.focus();
+  });
+  favToggle.addEventListener("click", function () {
+    var on = favToggle.classList.toggle("on");
+    favToggle.setAttribute("aria-pressed", on ? "true" : "false");
+    refresh();
+  });
+  emptyReset.addEventListener("click", function () {
+    input.value = "";
+    clear.hidden = true;
+    favToggle.classList.remove("on");
+    favToggle.setAttribute("aria-pressed", "false");
+    refresh();
+  });
+
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(paintAll, 150);
+  });
+
+  refresh();
+}
+
+if (typeof document !== "undefined") init();
+</script>
+</body>
+</html>

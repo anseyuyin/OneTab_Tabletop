@@ -3177,14 +3177,17 @@ var AI = {
       else { showScreen('game'); playNumberPulses(g, snapN); AI.advance(); }
     });
   },
+  // 贵族多选：候选贵族均已达成，优先抢走"对手最接近达成"的（卡住对手），其余随机
   pickNoble: function (g, p) {
-    var best = 0, bestS = -1;
+    var best = 0, bestS = -1e9;
     g.nobleChoices.forEach(function (idx, ci) {
-      var n = g.nobles[idx], s = 0;
-      for (var c = 0; c < 5; c++) {
-        var gap = Math.max(0, n.req[c] - p.cards[COLORS[c]]);
-        s += gap * (n.req[c] > 0 ? 2 : 0);
-      }
+      var n = g.nobles[idx], s = Math.random() * 0.5;
+      g.players.forEach(function (op) {
+        if (op === p) return;
+        var gap = 0;
+        for (var c = 0; c < 5; c++) gap += Math.max(0, n.req[c] - op.cards[COLORS[c]]);
+        s += Math.max(0, 8 - gap);   // 对手缺口越小 → 越要抢先拿走
+      });
       if (s > bestS) { bestS = s; best = ci; }
     });
     return best;
@@ -3201,19 +3204,22 @@ var AI = {
     p.reserved.forEach(function (rc) {
       if (canAfford(p, rc.card)) moves.buy.push({ type: 'buy', card: rc.card, fromReserved: true, tier: rc.card.tier, col: -1 });
     });
-    COLORS.forEach(function (cc) {
-      if (g.bank[cc] >= 4 && p.gems[cc] + 2 <= 10) moves.take2.push({ type: 'take2', col: cc });
-    });
+    var room = GEM_TOTAL_MAX - playerGemTotal(p);
+    if (room >= 2) {   // 拿 2 个后总数不得超 10（含黄金）
+      COLORS.forEach(function (cc) {
+        if (g.bank[cc] >= 4 && p.gems[cc] + 2 <= 10) moves.take2.push({ type: 'take2', col: cc });
+      });
+    }
     var max3 = take3MaxPick(g, p);
     if (max3 > 0) {
       var pick3 = AI.take3Colors(g, p, lv, max3);
       if (pick3.length) moves.take3.push({ type: 'take3', cols: pick3 });
     }
-    if (g.gold > 0 && p.reserved.length < 3) {
+    if (g.gold > 0 && p.reserved.length < 3 && room >= 1) {   // 保留会 +1 黄金，需留空位
       for (var t2 = 1; t2 <= 3; t2++) {
         for (var c2 = 0; c2 < 4; c2++) {
           var card2 = tableCards(g, t2, c2);
-          if (card2) moves.reserve.push({ type: 'reserve', tier: t2, col: c2, fromDraw: false });
+          if (card2) moves.reserve.push({ type: 'reserve', tier: t2, col: c2, fromDraw: false, card: card2 });
         }
       }
     }
@@ -3221,7 +3227,7 @@ var AI = {
     if (lv === 2) return AI.decideNormal(g, p, moves);
     return AI.decideHard(g, p, moves);
   },
-  // 拿 3 色候选：按需求度排序取前 max3 种（简单 = 随机，无目标性）
+  // 拿 3 色候选：按需求度排序取前 max3 种（简单级需求含噪声，无强目标性）
   take3Colors: function (g, p, lv, max3) {
     var avail = COLORS.filter(function (c) { return g.bank[c] > 0 && p.gems[c] < 10; });
     if (!avail.length) return [];
@@ -3229,46 +3235,89 @@ var AI = {
     avail.sort(function (a, b) { return needs[b] - needs[a]; });
     return avail.slice(0, max3);
   },
-  // 颜色需求度：简单 = 随机；普通 = 银行余量 + 贵族缺口；困难 = 银行余量 + 贵族缺口 + 关键牌成本缺口
-  colorNeeds: function (g, p, lv) {
-    var needs = { W: 0, B: 0, G: 0, R: 0, K: 0 };
-    if (lv === 1) {
-      COLORS.forEach(function (c) { needs[c] = Math.random(); });
-      return needs;
-    }
-    COLORS.forEach(function (c) { needs[c] = Math.max(0, 10 - g.bank[c]); });
-    g.nobles.forEach(function (n) {
-      if (n.taken) return;
-      var gap = 0;
-      for (var i = 0; i < 5; i++) gap += Math.max(0, n.req[i] - p.cards[COLORS[i]] - p.gems[COLORS[i]]);
-      if ((lv === 2 ? gap <= 6 : gap <= 4)) {
-        for (var j = 0; j < 5; j++) {
-          var c = COLORS[j];
-          needs[c] += Math.max(0, n.req[j] - p.cards[c]) * (lv === 3 ? 2 : 1);
-        }
-      }
-    });
-    if (lv === 3) {
-      AI.keyCards(g, p).forEach(function (k) {
-        for (var j = 0; j < 5; j++) {
-          var c = COLORS[j];
-          needs[c] += Math.max(0, k.card.cost[j] - p.cards[c]);
-        }
-      });
-    }
-    return needs;
+  // 有效成本：扣除已购卡折扣后，仍需用宝石/黄金支付的数量
+  effectiveCost: function (p, card) {
+    var s = 0;
+    for (var i = 0; i < 5; i++) s += Math.max(0, card.cost[i] - p.cards[COLORS[i]]);
+    return s;
   },
-  // 高价值展示牌（困难级评估用）：≥2 分或能推进贵族
-  keyCards: function (g, p) {
-    var res = [];
+  // 愿望清单：展示区 + 已保留牌中最值得追求的牌，按愿望值降序
+  // 愿望值 = 点数 + 贵族推进 - 有效成本（困难级追加对手威胁与终局抢分权重）
+  wishList: function (g, p, lv, topN) {
+    var list = [];
+    var scan = function (card, fromReserved) {
+      var w = card.points * 4 + AI.nobleProgress(p, card) * 2.5 - AI.effectiveCost(p, card) * 0.9;
+      if (lv >= 3) {
+        w += AI.urgency(g, p, card) * 0.6;
+        if (p.score >= 10) w += card.points * 3;   // 终局冲刺：分数权重提高
+      }
+      if (fromReserved) w += 1.5;                  // 已锁定的牌不浪费
+      if (w > 0) list.push({ card: card, w: w, fromReserved: !!fromReserved });
+    };
     for (var t = 1; t <= 3; t++) {
       for (var c = 0; c < 4; c++) {
         var card = tableCards(g, t, c);
-        if (!card) continue;
-        if (card.points >= 2 || AI.nobleProgress(p, card) > 0) res.push({ card: card, tier: t, col: c });
+        if (card) scan(card, false);
       }
     }
-    return res;
+    p.reserved.forEach(function (rc) { scan(rc.card, true); });
+    list.sort(function (a, b) { return b.w - a.w; });
+    return list.slice(0, topN);
+  },
+  // 颜色需求度：简单 = 单一目标 + 大噪声；普通/困难 = 愿望清单缺口加权 + 近达成贵族颜色加权
+  colorNeeds: function (g, p, lv) {
+    var needs = { W: 0, B: 0, G: 0, R: 0, K: 0 };
+    if (lv === 1) {
+      var wl1 = AI.wishList(g, p, 1, 1);
+      COLORS.forEach(function (c, i) {
+        var gap = wl1.length ? Math.max(0, wl1[0].card.cost[i] - p.cards[c] - p.gems[c]) : 0;
+        needs[c] = gap + Math.random() * 2.5;   // 大噪声 → 决策飘忽（保留简单难度手感）
+      });
+      return needs;
+    }
+    AI.wishList(g, p, lv, lv >= 3 ? 4 : 2).forEach(function (it, rank) {
+      var wgt = 1 + it.w * 0.2 / (rank + 1);   // 愿望值越高、排名越前 → 权重越大
+      for (var i = 0; i < 5; i++) {
+        var c = COLORS[i];
+        needs[c] += Math.max(0, it.card.cost[i] - p.cards[c] - p.gems[c]) * wgt;
+      }
+    });
+    g.nobles.forEach(function (n) {
+      if (n.taken) return;
+      var gapAll = 0;
+      for (var i = 0; i < 5; i++) gapAll += Math.max(0, n.req[i] - p.cards[COLORS[i]]);
+      if (gapAll <= (lv >= 3 ? 5 : 3)) {       // 只关注接近达成的贵族
+        for (var j = 0; j < 5; j++) {
+          var cc = COLORS[j];
+          needs[cc] += Math.max(0, n.req[j] - p.cards[cc]) * (lv >= 3 ? 1.5 : 1);
+        }
+      }
+    });
+    return needs;
+  },
+  // 颜色协同价值：多一个 color 色折扣，对愿望清单与贵族的潜在推进
+  synergy: function (g, p, color) {
+    var i = COLORS.indexOf(color), v = 0;
+    AI.wishList(g, p, 3, 4).forEach(function (it) {
+      var lack = it.card.cost[i] - p.cards[color];
+      if (lack > 0) v += Math.min(1.5, lack * 0.5);
+    });
+    g.nobles.forEach(function (n) {
+      if (!n.taken && n.req[i] > p.cards[color]) v += 0.8;
+    });
+    return v;
+  },
+  // 购牌综合评分（普通/困难共用；困难级追加对手威胁、颜色协同与终局权重）
+  buyScore: function (g, p, m, lv) {
+    var card = m.card;
+    var s = card.points * 6 + AI.nobleProgress(p, card) * 3 - AI.effectiveCost(p, card) * 0.5;
+    if (m.fromReserved) s += 2;                       // 已保留的牌优先变现
+    if (lv >= 3) {
+      s += AI.urgency(g, p, card);                    // 对手即将买得起 → 抢先
+      s += AI.synergy(g, p, card.provide) * 0.8;      // 颜色折扣的未来价值
+      if (p.score >= 10) s += card.points * 4;        // 终局抢分
+    }
+    return s;
   },
   // 买下 card 后贵族"达成进度"的提升量
   nobleProgress: function (p, card) {
@@ -3289,7 +3338,7 @@ var AI = {
   urgency: function (g, p, card) {
     var u = 0;
     g.players.forEach(function (op) {
-      if (op === p || op.isAI) return;
+      if (op === p) return;   // 所有对手都计入威胁（含其他人机）
       var goldNeed = 0;
       for (var i = 0; i < 5; i++) {
         var deficit = card.cost[i] - op.cards[COLORS[i]];
@@ -3301,71 +3350,92 @@ var AI = {
     });
     return u;
   },
-  // 简单：行动优先级带随机性，选牌/拿色随机，偶发保留
+  // 简单：能买大概率买（前 2 名中随机），拿色带噪声的弱目标性，偶发随机保留
   decideEasy: function (g, p, moves) {
-    var r = Math.random();
-    if (moves.buy.length && r < 0.4) return moves.buy[Math.floor(Math.random() * moves.buy.length)];
-    if (moves.take3.length && r < 0.72) return moves.take3[0];
-    if (moves.take2.length && r < 0.9) return moves.take2[Math.floor(Math.random() * moves.take2.length)];
-    if (moves.reserve.length) return moves.reserve[Math.floor(Math.random() * moves.reserve.length)];
+    if (moves.buy.length && Math.random() < 0.85) {
+      moves.buy.sort(function (a, b) {
+        return (b.card.points * 3 - AI.effectiveCost(p, b.card)) - (a.card.points * 3 - AI.effectiveCost(p, a.card));
+      });
+      return moves.buy[Math.floor(Math.random() * Math.min(2, moves.buy.length))];
+    }
+    if (moves.take3.length && Math.random() < 0.75) return moves.take3[0];
+    if (moves.take2.length) {
+      var needs = AI.colorNeeds(g, p, 1);
+      var best2 = moves.take2[0], bestN = -1e9;
+      moves.take2.forEach(function (m) {
+        var n = needs[m.col] + Math.random() * 1.5;
+        if (n > bestN) { bestN = n; best2 = m; }
+      });
+      return best2;
+    }
+    if (moves.take3.length) return moves.take3[0];
+    if (moves.reserve.length && Math.random() < 0.5) return moves.reserve[Math.floor(Math.random() * moves.reserve.length)];
     if (moves.buy.length) return moves.buy[0];
-    if (moves.take3.length) return moves.take3[0];
-    if (moves.take2.length) return moves.take2[0];
+    if (moves.reserve.length) return moves.reserve[0];
     return null;
   },
-  // 普通：优先买"性价比好"的牌；否则按需求拿宝石；偶发保留高分牌
+  // 普通：买高性价比牌（点数 + 贵族推进 - 有效成本），拿宝石精确对准愿望清单缺口，单色缺口大时拿 2 个
   decideNormal: function (g, p, moves) {
+    var i, best, bestS;
     if (moves.buy.length) {
-      var bestB = moves.buy[0], bestS = -1e9;
-      moves.buy.forEach(function (m) {
-        var s = m.card.points * 3 - cardCostSum(m.card);
-        if (s > bestS) { bestS = s; bestB = m; }
-      });
-      return bestB;
+      best = moves.buy[0]; bestS = -1e9;
+      for (i = 0; i < moves.buy.length; i++) {
+        var sb = AI.buyScore(g, p, moves.buy[i], 2);
+        if (sb > bestS) { bestS = sb; best = moves.buy[i]; }
+      }
+      // 值得买（有分或够便宜攒折扣）才出手，否则继续攒宝石
+      if (best.card.points >= 1 || AI.effectiveCost(p, best.card) <= 3) return best;
     }
-    var r = Math.random();
-    if (moves.take3.length && r < 0.8) return moves.take3[0];
+    var needs = AI.colorNeeds(g, p, 2);
     if (moves.take2.length) {
-      var needs = AI.colorNeeds(g, p, 2);
-      var best2 = moves.take2[0], bestN = -1;
-      moves.take2.forEach(function (m) { if (needs[m.col] > bestN) { bestN = needs[m.col]; best2 = m; } });
-      return best2;
-    }
-    if (moves.reserve.length && r < 0.25) {
-      var high = moves.reserve.filter(function (m) { return m.card.points >= 2; });
-      if (high.length) return high[0];
+      best = null; bestS = 1.5;   // 单色需求够强才拿 2 个（效率优先）
+      for (i = 0; i < moves.take2.length; i++) {
+        if (needs[moves.take2[i].col] > bestS) { bestS = needs[moves.take2[i].col]; best = moves.take2[i]; }
+      }
+      if (best) return best;
     }
     if (moves.take3.length) return moves.take3[0];
     if (moves.take2.length) return moves.take2[0];
+    if (moves.reserve.length) {
+      best = moves.reserve[0]; bestS = -1e9;
+      for (i = 0; i < moves.reserve.length; i++) {
+        var m = moves.reserve[i];
+        var sr = m.card.points * 3 + AI.nobleProgress(p, m.card) * 2 - AI.effectiveCost(p, m.card) * 0.4;
+        if (sr > bestS) { bestS = sr; best = m; }
+      }
+      return best;
+    }
+    if (moves.buy.length) return moves.buy[0];
     return null;
   },
-  // 困难：综合评分（点数/性价比/贵族推进/对手威胁），拿宝石精确补缺，保留高价值牌
+  // 困难：全部候选动作统一评分直接比大小（购买 / 拿 2 / 拿 3 / 保留），含对手威胁、颜色协同、终局抢分
   decideHard: function (g, p, moves) {
-    if (moves.buy.length) {
-      var bestB = moves.buy[0], bestS = -1e9;
-      moves.buy.forEach(function (m) {
-        var s = m.card.points * 5 + AI.nobleProgress(p, m.card) * 3 - cardCostSum(m.card) * 0.4 + AI.urgency(g, p, m.card);
-        if (s > bestS) { bestS = s; bestB = m; }
-      });
-      return bestB;
+    var best = null, bestS = -1e9, i;
+    var needs = AI.colorNeeds(g, p, 3);
+    // 购买：直接收益最高
+    for (i = 0; i < moves.buy.length; i++) {
+      var sb = AI.buyScore(g, p, moves.buy[i], 3);
+      if (sb > bestS) { bestS = sb; best = moves.buy[i]; }
     }
-    if (moves.take3.length) return moves.take3[0];
-    if (moves.take2.length) {
-      var needs = AI.colorNeeds(g, p, 3);
-      var best2 = moves.take2[0], bestN = -1;
-      moves.take2.forEach(function (m) { if (needs[m.col] > bestN) { bestN = needs[m.col]; best2 = m; } });
-      return best2;
+    // 拿 2 个同色：按缺口计双倍进展；缺口 ≥2 再追加效率分
+    for (i = 0; i < moves.take2.length; i++) {
+      var n2 = needs[moves.take2[i].col];
+      var s2 = n2 * 2 + (n2 >= 2 ? 1 : 0);
+      if (s2 > bestS) { bestS = s2; best = moves.take2[i]; }
     }
-    if (moves.reserve.length) {
-      var bestR = moves.reserve[0], bestS2 = -1e9;
-      moves.reserve.forEach(function (m) {
-        var s = m.card.points * 4 + AI.nobleProgress(p, m.card) * 2 + AI.urgency(g, p, m.card);
-        if (s > bestS2) { bestS2 = s; bestR = m; }
-      });
-      if (bestS2 >= 4) return bestR;
+    // 拿 3 色：各色需求总和
+    for (i = 0; i < moves.take3.length; i++) {
+      var s3 = 0;
+      moves.take3[i].cols.forEach(function (c) { s3 += needs[c]; });
+      if (s3 > bestS) { bestS = s3; best = moves.take3[i]; }
     }
-    if (moves.take2.length) return moves.take2[0];
-    return null;
+    // 保留：锁定高分/高威胁牌（+1 黄金），顺带卡对手
+    for (i = 0; i < moves.reserve.length; i++) {
+      var r = moves.reserve[i];
+      var s4 = r.card.points * 3.5 + AI.nobleProgress(p, r.card) * 2 + AI.urgency(g, p, r.card) * 0.8 - AI.effectiveCost(p, r.card) * 0.3 + 1;
+      if (s4 > bestS) { bestS = s4; best = r; }
+    }
+    return best;
   },
 };
 
