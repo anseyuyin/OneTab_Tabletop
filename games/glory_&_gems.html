@@ -238,7 +238,7 @@
 'use strict';
 
 // 游戏版本（首页右下角显示）
-const GAME_VERSION = 'v 1.0.1';
+const GAME_VERSION = 'v 1.0.2';
 
 // ============================================================
 // 统一资源颜色规范（全游戏唯一配色来源，6 种资源）
@@ -1840,6 +1840,61 @@ function gemPileGroup(key, colorKey, x, y, size, z) {
   var m = mkMesh(gemTex(colorKey, size), size, size, x, y, z || 2);
   var numMesh = mkTextMesh('', x, y + size * 0.02, Math.max(9, size * 0.34), '#ffffff', { key: 'n' + key, stroke: 'rgba(0,0,0,0.55)' });
   return { mesh: m, num: numMesh, key: key };
+}
+
+// ============ AO 接触阴影（静态物件落地后的轮廓外阴影） ============
+var AO_SHADOW_TEX = {};
+function aoShadowTex(aspect) {
+  // 竖版物件（高>宽）与方形物件各缓存一张贴图
+  var k = aspect < 0.99 ? 'v' : 'sq';
+  if (AO_SHADOW_TEX[k]) return AO_SHADOW_TEX[k];
+  var size = 128;
+  AO_SHADOW_TEX[k] = makeTex('ao-shadow-' + k, size, size, function (ctx, W, H) {
+    // 关键①：渐变在贴图内部收为零（半径 0.48 → 水平 u∈[0.02,0.98]），
+    //         绝不能被阴影平面的矩形边缘截断 → 无上下左右硬切边。
+    // 关键②：竖版物件按宽高比反向压缩渐变（scale(1, aspect)），
+    //         这样正方形渐变被 1.85×w × 1.85×h 的平面拉伸后，在世界空间还原成正圆，
+    //         横纵阴影范围一致，不会"纵向比横向大"。
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(1, Math.min(1, aspect));
+    var g = ctx.createRadialGradient(0, 0, W * 0.03, 0, 0, W * 0.48);
+    g.addColorStop(0, 'rgba(2,5,14,0.98)');
+    g.addColorStop(0.4, 'rgba(2,5,14,0.80)');
+    g.addColorStop(0.7, 'rgba(2,5,14,0.46)');
+    g.addColorStop(0.9, 'rgba(2,5,14,0.14)');
+    g.addColorStop(1, 'rgba(2,5,14,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(-W, -W, W * 2, W * 2);
+    ctx.restore();
+  });
+  return AO_SHADOW_TEX[k];
+}
+// 为静态物件创建 AO 阴影：整体下移 10%（阴影重心沉在底部），z 位于物件之下、桌面之上。
+// opts.scale 控制阴影范围（相对物件尺寸的倍数，默认 1.85）；
+// opts.opacity 控制浓度（<1 变淡，默认 1）。
+// 物件飞行时其阴影不显示（飞行物为独立 FLY 网格，本函数只服务于静态网格）。
+function aoShadow(w, h, x, y, z, opts) {
+  opts = opts || {};
+  var aspect = h > 0 ? w / h : 1;
+  var k = opts.scale === undefined ? 1.85 : opts.scale;
+  var sw = w * k, sh = h * k;
+  var mesh = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), new THREE.MeshBasicMaterial({
+    map: aoShadowTex(aspect), transparent: true, alphaTest: 0.01, depthWrite: false
+  }));
+  if (opts.opacity !== undefined) mesh.material.opacity = opts.opacity;
+  mesh.position.set(x, y - h * 0.1, (z === undefined ? 2 : z) - 1.0);
+  SceneRoot.root.add(mesh);
+  return mesh;
+}
+// 移除 AO 阴影：只释放自身的 geometry/material，不释放共享贴图 aoShadowTex
+function removeAoShadow(mesh) {
+  if (!mesh) return;
+  if (mesh.parent) SceneRoot.root.remove(mesh);
+  if (mesh.geometry) mesh.geometry.dispose();
+  if (mesh.material) mesh.material.dispose();
+  mesh.geometry = null;
+  mesh.material = null;
 }
 
 // ============================================================
@@ -4380,6 +4435,8 @@ function playActionAnimated(g, info, done) {
         from = showPos(tier, info.col);
         var mk0 = GameScreen.cardMeshes[tier + ':' + info.col];
         if (mk0) mk0.visible = false;   // 原地卡先隐藏，避免与飞行分身叠影
+        var sh0 = GameScreen.cardShadows[tier + ':' + info.col];
+        if (sh0) sh0.visible = false;   // 卡飞走后其落地阴影一并隐藏
       }
       FLY.card(info.card, false, from, toW(slot), L.cards[tier].w, L.cards[tier].h, { toScale: 0.5, fadeOut: true, dur: 560 });
       playSfx('whoosh');   // 发展卡飞到玩家：「嗖」
@@ -4399,6 +4456,8 @@ function playActionAnimated(g, info, done) {
       if (!info.fromDraw) {
         var mk1 = GameScreen.cardMeshes[tier2 + ':' + info.col];
         if (mk1) mk1.visible = false;
+        var sh1 = GameScreen.cardShadows[tier2 + ':' + info.col];
+        if (sh1) sh1.visible = false;   // 卡飞走后其落地阴影一并隐藏
       }
       // 展示保留传真实卡（牌面飞行）；盲保留传占位（卡背飞行）
       var resvCard = info.fromDraw ? { tier: tier2 } : tableCards(g, tier2, info.col);
@@ -4536,12 +4595,17 @@ var GameScreen = {
   actionBtnMeshes: {},
   execBtnMesh: null,
   msgMesh: null,
+  deckShadows: {},   // 牌堆 AO 阴影
+  cardShadows: {},   // 展示发展卡 AO 阴影
+  nobleShadows: {},  // 贵族卡 AO 阴影
+  gemShadows: {},    // 资源堆 AO 阴影
 
   build: function () {
     var L = this.L = computeLayout();
     var g = G.game;
     this.gemPiles = {}; this.cardMeshes = {}; this.deckLabelNums = {};
     this.nobleMeshes = {}; this.panelMeshes = {}; this.resvSpots = {};
+    this.deckShadows = {}; this.cardShadows = {}; this.nobleShadows = {}; this.gemShadows = {};
 
     var bg = makeTex('gbg', L.W, L.H, function (ctx, w, h) {
       var grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -4567,6 +4631,7 @@ var GameScreen = {
       var ny = L.nobles.ys[i];
       var m = mkMesh(nobleTex(g.nobles[i], L.nobles.w, L.nobles.h), L.nobles.w, L.nobles.h, L.nobles.x, ny, 2);
       this.nobleMeshes[i] = m;
+      this.nobleShadows[i] = aoShadow(L.nobles.w, L.nobles.h, L.nobles.x, ny, 2, { scale: 1.75, opacity: 0.9 });
       addClickable('noble:' + i, L.nobles.x, ny, L.nobles.w, L.nobles.h, 2);
     }
 
@@ -4575,12 +4640,15 @@ var GameScreen = {
     for (var t = 1; t <= 3; t++) {
       var lb = L.deckLabels[t];
       mkMesh(cardBackTex(t, lb.w, lb.h), lb.w, lb.h, lb.x, lb.y, 1.6);
+      this.deckShadows[t] = aoShadow(lb.w, lb.h, lb.x, lb.y, 1.6);
       this.deckLabelNums[t] = mkTextMesh('', lb.x, lb.y + lb.h * 0.18, Math.max(9, lb.w * 0.22), '#ffffff', { key: 'dl' + t, stroke: 'rgba(0,0,0,0.55)' });
       addClickable('deck:' + t, lb.x, lb.y, lb.w, lb.h, 1.6);   // 保留模式：点击牌堆盲取 1 张
       for (var c = 0; c < 4; c++) {
         var x = L.cards[t].xs[c], y = L.cards[t].rowY;
         var card = tableCards(g, t, c);
         this.cardMeshes[t + ':' + c] = card ? mkMesh(cardTex(card, L.cards[t].w, L.cards[t].h), L.cards[t].w, L.cards[t].h, x, y, 2) : null;
+        // 发展卡阴影增强：范围 1.95 倍、全浓度（配合共享贴图浓度上调）
+        this.cardShadows[t + ':' + c] = card ? aoShadow(L.cards[t].w, L.cards[t].h, x, y, 2, { scale: 1.95 }) : null;
         addClickable('card:' + t + ':' + c, x, y, L.cards[t].w, L.cards[t].h, 2);
       }
     }
@@ -4592,6 +4660,8 @@ var GameScreen = {
       var gy = L.gems.ys[gi];
       var pile = gemPileGroup('gem:' + k, k, L.gems.x, gy, L.gems.size, 2);
       this.gemPiles[k] = pile;
+      // 资源堆小而密：阴影范围 1.4 倍、浓度 0.7，既比发展卡轻、又保留可见的落地阴影
+      this.gemShadows[k] = aoShadow(L.gems.size, L.gems.size, L.gems.x, gy, 2, { scale: 1.4, opacity: 0.7 });
       addClickable('gem:' + k, L.gems.x, gy, L.gems.size + 6, L.gems.size + 6, 2);
     }
 
@@ -4630,6 +4700,8 @@ var GameScreen = {
           // 与飞行卡终点同帧交接（位置一致，视觉无缝衔接），而不是等全部落地后一次性显示
           var dm = this.cardMeshes[key2];
           if (dm) dm.visible = false;
+          var dsh2 = this.cardShadows[key2];
+          if (dsh2) dsh2.visible = false;   // 飞行动画期间隐藏落地阴影，落地瞬间恢复
           FLY.card(dealCard, false,
             { x: Ld.deckLabels[t2].x, y: Ld.deckLabels[t2].y },
             { x: Ld.cards[t2].xs[c2], y: Ld.cards[t2].rowY },
@@ -4640,6 +4712,8 @@ var GameScreen = {
                 return function () {
                   var mk = GameScreen.cardMeshes[k];
                   if (mk) mk.visible = true;
+                  var sh = GameScreen.cardShadows[k];
+                  if (sh) sh.visible = true;   // 飞行卡落地 → 静态卡及其 AO 阴影恢复
                 };
               })(key2),
             });
@@ -4760,10 +4834,13 @@ var GameScreen = {
         if (card && !m) {
           m = mkMesh(cardTex(card, L.cards[t].w, L.cards[t].h), L.cards[t].w, L.cards[t].h, x, y, 2);
           this.cardMeshes[key] = m;
+          this.cardShadows[key] = aoShadow(L.cards[t].w, L.cards[t].h, x, y, 2, { scale: 1.95 });
         } else if (!card && m) {
           SceneRoot.root.remove(m);
           disposeGroup(m); // 释放已购牌的 geometry/material
           this.cardMeshes[key] = null;
+          removeAoShadow(this.cardShadows[key]);
+          this.cardShadows[key] = null;
         } else if (card && m) {
           m.material.map = cardTex(card, L.cards[t].w, L.cards[t].h);
           m.material.needsUpdate = true;
@@ -4771,10 +4848,15 @@ var GameScreen = {
       }
     }
 
-    // 贵族卡
+    // 贵族卡（被取走的贵族淡出，其 AO 阴影同步隐藏）
     for (var ni = 0; ni < g.nobles.length; ni++) {
       var nm = this.nobleMeshes[ni];
-      if (nm) nm.material.opacity = g.nobles[ni].taken ? 0.15 : 1;
+      if (nm) {
+        var takenN = g.nobles[ni].taken;
+        nm.material.opacity = takenN ? 0.15 : 1;
+        var ns = this.nobleShadows[ni];
+        if (ns) ns.visible = !takenN;
+      }
     }
 
     // 面板重绘
