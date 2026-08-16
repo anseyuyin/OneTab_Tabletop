@@ -1966,18 +1966,18 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   ctx.translate(bcx, bcy);
   ctx.rotate(Math.PI / 4);
   var dg = ctx.createLinearGradient(-db, -db, db, db);
-  dg.addColorStop(0, '#f7b733');
-  dg.addColorStop(1, '#c26e00');
+  dg.addColorStop(0, '#f2b845');
+  dg.addColorStop(1, '#b97814');
   ctx.fillStyle = dg;
   var ds = db * 0.78;
   rr(ctx, -ds, -ds, ds * 2, ds * 2, ds * 0.3);
   ctx.fill();
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = '#8f5a00';
+  ctx.strokeStyle = '#8a5c10';
   rr(ctx, -ds, -ds, ds * 2, ds * 2, ds * 0.3);
   ctx.stroke();
   ctx.restore();
-  text(ctx, '' + p.score, bcx, bcy + 1, db * 0.8, '#ffffff', 'center', true, 'rgba(0,0,0,0.35)');
+  text(ctx, '' + p.score, bcx, bcy + 1, Math.max(15, db * 0.88), '#ffffff', 'center', true, 'rgba(70,42,0,0.55)');   // 白色分数 + 暖棕细描边，衬亮金菱形底（高对比、干净）
 
   // 资源圆：当前资源总数 / 持有上限，斜线分隔（每位玩家能同时持有的宝石含黄金上限为 10）
   var gemTotalMax = GEM_TOTAL_MAX;
@@ -2020,7 +2020,7 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   ss = Math.max(18, ss);
   var sgap = ss * 0.14;
 
-  // 5 色资源槽：大数 = 矿卡数，白色椭圆角标 = 宝石数
+  // 5 色资源槽：大数 = 矿卡数，圆形筹码角标 = 宝石数（与发展卡兑换成本同款：各资源不同色 + 计数）
   for (var i = 0; i < 5; i++) {
     var c = COLORS[i], info = COLOR_INFO[c];
     var sx0 = x0 + i * (ss + sgap);
@@ -2036,23 +2036,17 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
     rr(ctx, sx0 + 0.5, midY - ss / 2 + 0.5, ss - 1, ss - 1, ss * 0.2);
     ctx.stroke();
     text(ctx, '' + p.cards[c], scx - ss * 0.08, midY - ss * 0.12, ss * 0.44, info.onChip, 'center', true, info.onChip === '#ffffff' ? 'rgba(0,0,0,0.3)' : null);
-    // 宝石数角标
-    var ow = ss * 0.58, oh = ss * 0.38;
+    // 宝石数角标：圆形筹码（资源色渐变 + 描边 + 高光，与右侧黄金筹码同尺寸 gr）
+    var br = gr;
     var ocx = scx + ss * 0.3, ocy = midY + ss * 0.34;
-    ctx.beginPath();
-    ctx.ellipse(ocx, ocy, ow / 2, oh / 2, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#f4f5f7';
-    ctx.fill();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-    ctx.stroke();
-    text(ctx, '' + p.gems[c], ocx, ocy + 0.5, oh * 0.62, '#3c4048', 'center');
+    drawGemChip(ctx, ocx, ocy, br, info.gem, info.gemDark, info.stroke);
+    text(ctx, '' + p.gems[c], ocx, ocy + 0.5, br * 0.95, info.onChip, 'center', true, info.onChip === '#ffffff' ? 'rgba(0,0,0,0.35)' : null);
   }
 
   // 黄金筹码
   var gcx = x0 + 5 * (ss + sgap) + gr + 2;
   drawGemChip(ctx, gcx, midY, gr, GOLD_INFO.gem, GOLD_INFO.gemDark, GOLD_INFO.stroke);
-  text(ctx, '' + p.gold, gcx, midY + 0.5, gr * 0.95, GOLD_INFO.onChip, 'center');
+  text(ctx, '' + p.gold, gcx, midY + 0.5, gr * 0.95, '#ffffff', 'center', true, 'rgba(0,0,0,0.35)');
 
   // 保留牌（真实牌面等比缩放，右端错位排列：第 0 张最左，最新保留的最右完整可见）
   if (showN) {
@@ -2636,25 +2630,25 @@ function helpPanelMain() {
     ctx.fill();
     ctx.globalAlpha = 1;
 
-    // 1) 计分：四边菱形（金色渐变圆角方块旋转 45°）+ 中间白色分数
+    // 1) 计分：四边菱形（金色渐变圆角方块旋转 45°）+ 中间金色分数（同发展卡分值色）
     var db = h * 0.21;
     var bcx = pad + db * 0.95, bcy = h * 0.36;
     ctx.save();
     ctx.translate(bcx, bcy);
     ctx.rotate(Math.PI / 4);
     var dg = ctx.createLinearGradient(-db, -db, db, db);
-    dg.addColorStop(0, '#f7b733');
-    dg.addColorStop(1, '#c26e00');
+    dg.addColorStop(0, '#f2b845');
+    dg.addColorStop(1, '#b97814');
     ctx.fillStyle = dg;
     var ds = db * 0.78;
     rr(ctx, -ds, -ds, ds * 2, ds * 2, ds * 0.3);
     ctx.fill();
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#8f5a00';
+    ctx.strokeStyle = '#8a5c10';
     rr(ctx, -ds, -ds, ds * 2, ds * 2, ds * 0.3);
     ctx.stroke();
     ctx.restore();
-    text(ctx, '12', bcx, bcy + 1, db * 0.8, '#ffffff', 'center', true, 'rgba(0,0,0,0.35)');
+    text(ctx, '12', bcx, bcy + 1, Math.max(15, db * 0.88), '#ffffff', 'center', true, 'rgba(70,42,0,0.55)');
 
     // 2) 资源圆：手上宝石+黄金总数 / 上限 10（同 drawPanelContent：灰圆 + 金色斜线）
     var scr = Math.min(h * 0.18, 18);
@@ -2675,7 +2669,7 @@ function helpPanelMain() {
     text(ctx, '7', ccx - scr * 0.32, ccy - scr * 0.32, scr * 0.64, '#3c4048', 'center');
     text(ctx, '10', ccx + scr * 0.38, ccy + scr * 0.38, scr * 0.48, '#8a6d1d', 'center');
 
-    // 3) 5 色资源槽：色渐变矩形（大数 = 发展卡数）+ 右下白色椭圆（宝石数）
+    // 3) 5 色资源槽：色渐变矩形（大数 = 发展卡数）+ 右下圆形筹码（宝石数，同发展卡成本配色）
     var cardsN = [1, 1, 1, 1, 1], gemsN = [1, 2, 1, 0, 1];
     var x0 = ccx + scr + 8;
     var xEnd = w - pad - 4;
@@ -2697,27 +2691,21 @@ function helpPanelMain() {
       rr(ctx, sx0 + 0.5, midY - ss / 2 + 0.5, ss - 1, ss - 1, ss * 0.2);
       ctx.stroke();
       text(ctx, '' + cardsN[i], scx - ss * 0.08, midY - ss * 0.12, ss * 0.44, info.onChip, 'center', true, info.onChip === '#ffffff' ? 'rgba(0,0,0,0.3)' : null);
-      // 宝石数角标（右下白色椭圆）
-      var ow = ss * 0.58, oh = ss * 0.38;
+      // 宝石数角标（右下圆形筹码：资源色渐变 + 计数，尺寸同下方黄金 gr）
+      var br = Math.min(h * 0.18, 13);
       var ocx = scx + ss * 0.3, ocy = midY + ss * 0.34;
-      ctx.beginPath();
-      ctx.ellipse(ocx, ocy, ow / 2, oh / 2, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#f4f5f7';
-      ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-      ctx.stroke();
-      text(ctx, '' + gemsN[i], ocx, ocy + 0.5, oh * 0.62, '#3c4048', 'center');
+      drawGemChip(ctx, ocx, ocy, br, info.gem, info.gemDark, info.stroke);
+      text(ctx, '' + gemsN[i], ocx, ocy + 0.5, br * 0.95, info.onChip, 'center', true, info.onChip === '#ffffff' ? 'rgba(0,0,0,0.35)' : null);
     }
 
     // 4) 黄金：圆形筹码 + 数字
     var gr = Math.min(h * 0.18, 13);
     var gcx = x0 + 5 * (ss + sgap) + gr + 2;
     drawGemChip(ctx, gcx, midY, gr, GOLD_INFO.gem, GOLD_INFO.gemDark, GOLD_INFO.stroke);
-    text(ctx, '2', gcx, midY + 0.5, gr * 0.95, GOLD_INFO.onChip, 'center');
+    text(ctx, '2', gcx, midY + 0.5, gr * 0.95, '#ffffff', 'center', true, 'rgba(0,0,0,0.35)');
 
     // 底部说明（浅灰底上用深色字）
-    text(ctx, '菱形=分数 · 7/10=手上资源 · 色块=发展卡/椭圆=宝石 · 金圆=黄金', w / 2, h - 12, 11, 'rgba(153,217,234,0.88)', 'center');
+    text(ctx, '菱形=分数 · 7/10=手上资源 · 色块=发展卡/筹码=宝石 · 金圆=黄金', w / 2, h - 12, 11, 'rgba(153,217,234,0.88)', 'center');
   }, 380, 104);
 }
 
@@ -2832,7 +2820,7 @@ var HelpModal = {
       },
       {
         pic: helpPanelMain(),
-        tx: '<b>玩家面板</b>：<b>菱形</b> = 分数；<b>圆 A/10</b> = 手上资源总数（上限 10）；<b>色块</b> = 发展卡数、右下<b>椭圆</b> = 宝石数；<b>金色圆</b> = 黄金数。已购发展卡 = 永久资源，购买时自动抵扣成本。'
+        tx: '<b>玩家面板</b>：<b>菱形</b> = 分数；<b>圆 A/10</b> = 手上资源总数（上限 10）；<b>色块</b> = 发展卡数、右下<b>筹码</b> = 宝石数（各资源同色）；<b>金色圆</b> = 黄金数。已购发展卡 = 永久资源，购买时自动抵扣成本。'
       },
       {
         pic: helpReserve(),
@@ -3685,13 +3673,14 @@ function playNumberPulses(g, snap) {
     events.push({ x: pt.x, y: pt.y, str: '' + str, size: size, color: color, peak: peak, delay: delay, rot: rotv === undefined ? 0 : rotv });
     delay += 30;   // 多数字依次脉动（短间隔，整体节奏快）
   }
-  // 面板：分数菱形（文字中心 = 菱形中心，size = db*0.8 ≈ CH*0.168）
+  // 面板：分数菱形（文字中心 = 菱形中心，size = max(15, db*0.88) ≈ CH*0.185，白色分数 + 暖棕描边）
   if (p.score !== snap.score) {
     if (p.score > snap.score) playSfx('coin');   // 获得分值：马里奥金币音效（买卡得分/贵族 +3）
-    pushNum(toW(lay.score), p.score, CH * 0.168, '#ffffff', p.score > snap.score ? 1.5 : 0.75, rot);
+    pushNum(toW(lay.score), p.score, CH * 0.185, '#ffffff', p.score > snap.score ? 1.5 : 0.75, rot);
   }
-  // 面板：5 色槽位主数字（发展卡数，内容坐标中心 = scx-ss*0.08, midY-ss*0.12）+ 角标（宝石数）
+  // 面板：5 色槽位主数字（发展卡数，内容坐标中心 = scx-ss*0.08, midY-ss*0.12）+ 角标（宝石数，尺寸同黄金 gr）
   var ss = lay.slotSize;
+  var gr = Math.min(CH * 0.2, 14);   // 宝石角标筹码半径（与黄金筹码同径）
   for (var i = 0; i < 5; i++) {
     var c = COLORS[i];
     if (p.cards[c] !== snap.cards[c]) {
@@ -3700,13 +3689,12 @@ function playNumberPulses(g, snap) {
       pushNum({ x: main.x, y: main.y }, p.cards[c], ss * 0.44, COLOR_INFO[c].onChip, p.cards[c] > snap.cards[c] ? 1.5 : 0.75, rot);
     }
     if (p.gems[c] !== snap.gems[c]) {
-      pushNum(toW(lay.badges[i]), p.gems[c], ss * 0.236, '#3c4048', p.gems[c] > snap.gems[c] ? 1.5 : 0.75, rot);
+      pushNum(toW(lay.badges[i]), p.gems[c], gr * 0.95, COLOR_INFO[c].onChip, p.gems[c] > snap.gems[c] ? 1.5 : 0.75, rot);
     }
   }
   // 面板：黄金（size = gr*0.95）
   if (p.gold !== snap.gold) {
-    var gr = Math.min(CH * 0.2, 14);
-    pushNum(toW(lay.gold), p.gold, gr * 0.95, GOLD_INFO.onChip, p.gold > snap.gold ? 1.5 : 0.75, rot);
+    pushNum(toW(lay.gold), p.gold, gr * 0.95, '#ffffff', p.gold > snap.gold ? 1.5 : 0.75, rot);
   }
   // 面板：资源总数圆（中心 totalCircle，size = scr*0.64）
   var total = playerGemTotal(p);
