@@ -1209,14 +1209,16 @@ function gemShade(idx, nx, ny, nz, cfg) {
   return [r < 0 ? 0 : (r > 255 ? 255 : r), g < 0 ? 0 : (g > 255 ? 255 : g), b < 0 ? 0 : (b > 255 ? 255 : b)];
 }
 
-// 五种资源宝石参数（来自 tools/gemstone-cut-generator.html 导出 JSON）
+// 资源宝石参数（来自 tools/gemstone-cut-generator.html 导出 JSON；含黄金 Y）
 // W=钻石(圆明亮式)  B=蓝宝石(椭圆)  G=祖母绿(阶梯)  R=红宝石(椭圆)  K=黑曜石(公主方)
 var GEM_CUT_PARAMS = {
   W: { shape: 'round', cut: 'brilliant', symmetry: 22, table: 0.48, crown: 0.24, steps: 3, aspect: 1, corner: 1.35, rotation: 190, sparkle: 0.79, fire: 1.5, shine: 59, base: '#e0e9f5', dark: '#33465c', light: '#ffffff', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
   B: { shape: 'oval', cut: 'brilliant', symmetry: 8, table: 0.64, crown: 0.22, steps: 4, aspect: 1.35, corner: 1.35, rotation: 0, sparkle: 0.8, fire: 0.35, shine: 55, base: '#1d67c9', dark: '#0f3a52', light: '#c9ecff', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
   G: { shape: 'emerald', cut: 'step', symmetry: 8, table: 0.57, crown: 0.34, steps: 4, aspect: 1.45, corner: 1.81, rotation: 90, sparkle: 0.82, fire: 0.15, shine: 29, base: '#16a05f', dark: '#07502c', light: '#8dffce', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
   R: { shape: 'oval', cut: 'brilliant', symmetry: 8, table: 0.5, crown: 0.32, steps: 3, aspect: 1.35, corner: 1.35, rotation: 90, sparkle: 0.8, fire: 0.35, shine: 44, base: '#b5122d', dark: '#4c0611', light: '#f9aeba', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
-  K: { shape: 'princess', cut: 'brilliant', symmetry: 12, table: 0.43, crown: 0.28, steps: 4, aspect: 0.96, corner: 1.27, rotation: 90, sparkle: 0.88, fire: 1.2, shine: 42, base: '#2a2d36', dark: '#05060a', light: '#ffffff', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true }
+  K: { shape: 'princess', cut: 'brilliant', symmetry: 12, table: 0.43, crown: 0.28, steps: 4, aspect: 0.96, corner: 1.27, rotation: 90, sparkle: 0.88, fire: 1.2, shine: 42, base: '#2a2d36', dark: '#05060a', light: '#ffffff', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
+  // Y=黄金（垫形明亮式金色宝石，与刻面宝石风格统一；代替原圆形筹码）
+  Y: { shape: 'cushion', cut: 'brilliant', symmetry: 8, table: 0.58, crown: 0.3, steps: 4, aspect: 1, corner: 1.35, rotation: 0, sparkle: 0.9, fire: 0.45, shine: 46, base: '#f0c93c', dark: '#9a7010', light: '#fff2b8', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true }
 };
 
 // 在 canvas 上绘制刻面宝石（透明背景；r = 外接半径；参数同生成器）
@@ -2850,7 +2852,11 @@ function helpGemRow() {
       text(ctx, names[i], x0 + i * step, cy + r + 8, 11, 'rgba(223,232,248,0.9)', 'center');
     });
     var gx = x0 + keys.length * step;
-    drawGemChip(ctx, gx, cy, r, GOLD_INFO.gem, GOLD_INFO.gemDark, GOLD_INFO.stroke);
+    if (GEM_CUT_PARAMS.Y) {
+      drawFacetedGem(ctx, gx, cy, r, GEM_CUT_PARAMS.Y);
+    } else {
+      drawGemChip(ctx, gx, cy, r, GOLD_INFO.gem, GOLD_INFO.gemDark, GOLD_INFO.stroke);
+    }
     text(ctx, '黄金', gx, cy + r + 8, 11, 'rgba(245,215,110,0.95)', 'center');
   }, 380, 62);
 }
