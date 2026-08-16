@@ -920,18 +920,6 @@ function text(ctx, str, x, y, size, color, align, bold, stroke) {
 }
 
 // ---------- 宝石形状 ----------
-function gemPath(ctx, cx, cy, r) {
-  // 八面宝石轮廓
-  var pts = [];
-  for (var i = 0; i < 8; i++) {
-    var a = Math.PI / 8 + i * Math.PI / 4;
-    pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
-  }
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (var j = 1; j < 8; j++) ctx.lineTo(pts[j][0], pts[j][1]);
-  ctx.closePath();
-}
 // 画一个宝石（圆片样式，用于筹码）
 function drawGemChip(ctx, cx, cy, r, hex, dark, stroke) {
   var g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r);
@@ -2499,37 +2487,32 @@ var Home = {
       ctx.fillRect(0, 0, w, h);
       // 极淡菱格纹（呼应对局桌面织锦底纹）
       drawRhombusPattern(ctx, w, h, 0.05);
-      // 精致宝石装饰：八面切面剪影（渐变填充 + 顶部高光 + 轮廓光），避开中央 UI 竖列
+      // 精致宝石装饰：刻面宝石（与游戏内资源堆同款渲染引擎）+ 同色系光晕，避开中央 UI 竖列
       var gems = [
-        { x: w * 0.09, y: h * 0.7, r: Math.min(30, w * 0.055), c: COLOR_INFO.B },
-        { x: w * 0.92, y: h * 0.66, r: Math.min(26, w * 0.05), c: GOLD_INFO },
-        { x: w * 0.08, y: h * 0.3, r: Math.min(20, w * 0.038), c: COLOR_INFO.G },
-        { x: w * 0.91, y: h * 0.24, r: Math.min(24, w * 0.045), c: COLOR_INFO.R },
-        { x: w * 0.5, y: h * 0.07, r: Math.min(15, w * 0.028), c: COLOR_INFO.K },
+        { x: w * 0.09, y: h * 0.7, r: Math.min(30, w * 0.055), key: 'B' },
+        { x: w * 0.92, y: h * 0.66, r: Math.min(26, w * 0.05), key: 'Y' },
+        { x: w * 0.08, y: h * 0.3, r: Math.min(20, w * 0.038), key: 'G' },
+        { x: w * 0.91, y: h * 0.24, r: Math.min(24, w * 0.045), key: 'R' },
+        { x: w * 0.5, y: h * 0.07, r: Math.min(15, w * 0.028), key: 'K' },
       ];
       gems.forEach(function (gp) {
+        var P = GEM_CUT_PARAMS[gp.key];
+        if (!P) return;
+        var info = gp.key === 'Y' ? GOLD_INFO : COLOR_INFO[gp.key];
+        var rgb = gemHexToRgb(info.gem);
         ctx.save();
-        ctx.globalAlpha = 0.55;
-        gemPath(ctx, gp.x, gp.y, gp.r);
-        var gg = ctx.createLinearGradient(gp.x - gp.r, gp.y - gp.r, gp.x + gp.r, gp.y + gp.r);
-        gg.addColorStop(0, gp.c.gem);
-        gg.addColorStop(1, gp.c.gemDark);
-        ctx.fillStyle = gg;
-        ctx.fill();
-        // 上部切面高光（模拟顶面反光）
-        ctx.globalAlpha = 0.7;
-        gemPath(ctx, gp.x, gp.y, gp.r * 0.52);
-        var hg = ctx.createLinearGradient(gp.x - gp.r * 0.5, gp.y - gp.r * 0.6, gp.x, gp.y);
-        hg.addColorStop(0, 'rgba(255,255,255,0.9)');
-        hg.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = hg;
-        ctx.fill();
-        // 轮廓光
-        ctx.globalAlpha = 0.4;
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 1;
-        gemPath(ctx, gp.x, gp.y, gp.r);
-        ctx.stroke();
+        // 同色系柔和光晕：范围更大、强度更低，深色背景下衬托刻面宝石
+        var haloR = gp.r * 3.6;
+        var halo = ctx.createRadialGradient(gp.x, gp.y, 0, gp.x, gp.y, haloR);
+        halo.addColorStop(0, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.16)');
+        halo.addColorStop(0.55, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.055)');
+        halo.addColorStop(1, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0)');
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = halo;
+        ctx.fillRect(gp.x - haloR, gp.y - haloR, haloR * 2, haloR * 2);
+        // 刻面宝石（与资源堆同款；轻微半透明融入背景）
+        ctx.globalAlpha = 0.8;
+        drawFacetedGem(ctx, gp.x, gp.y, gp.r, P);
         ctx.restore();
       });
       // 极淡噪点（材质颗粒感，避免色阶断层）
