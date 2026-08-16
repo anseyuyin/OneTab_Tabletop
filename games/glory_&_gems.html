@@ -1003,11 +1003,340 @@ function drawRhombusPattern(ctx, w, h, alpha) {
   ctx.restore();
 }
 
+// ============================================================
+// 刻面宝石渲染（移植自 tools/gemstone-cut-generator.html）
+// 按参数 JSON 生成刻面宝石图形；透明背景，用于资源堆筹码
+// ============================================================
+function gemHexToRgb(h) {
+  h = String(h == null ? '#ffffff' : h).replace('#', '');
+  if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+  var n = parseInt(h, 16);
+  if (isNaN(n)) n = 0xffffff;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function gemMix(a, b, t) { return a + (b - a) * t; }
+function gemRand(i) {
+  var s = Math.sin(i * 127.1 + 311.7) * 43758.5453123;
+  return s - Math.floor(s);
+}
+function gemHslToRgb(h, s, l) {
+  h = ((h % 360) + 360) % 360 / 360;
+  var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  var p = 2 * l - q;
+  function f(t) {
+    t = ((t % 1) + 1) % 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  }
+  return { r: f(h + 1 / 3) * 255, g: f(h) * 255, b: f(h - 1 / 3) * 255 };
+}
+
+var GEM_LIGHTS = [
+  { x: 0.311,  y: 0.259,  z: 0.914, i: 0.78 },  // 顶部主光：照亮桌面
+  { x: 0.890,  y: 0.356,  z: 0.286, i: 0.62 },  // 侧面主光：拉开刻面明暗
+  { x: -0.908, y: -0.324, z: 0.264, i: 0.50 }   // 侧面补光：另一方向对比
+];
+
+var GEM_SHAPE_OFFSET = { round: 0, oval: 0, cushion: 0, princess: 0, marquise: Math.PI / 2, pear: Math.PI / 2, heart: 0, trillion: 0, emerald: 0, asscher: 0, radiant: 0 };
+
+function gemOutlinePoint(shape, t, P) {
+  var th = t * Math.PI * 2;
+  var c = Math.cos(th), s = Math.sin(th);
+  var x, y;
+  switch (shape) {
+    case 'round':
+      x = c; y = s; break;
+    case 'oval': {
+      var k = P.aspect;
+      x = c; y = k * s; break;
+    }
+    case 'cushion': {
+      var n2 = 2.6, p2 = 2 / n2;
+      x = Math.sign(c) * Math.pow(Math.abs(c), p2);
+      y = Math.sign(s) * Math.pow(Math.abs(s), p2);
+      break;
+    }
+    case 'princess': {
+      var n3 = 8, p3 = 2 / n3;
+      x = Math.sign(c) * Math.pow(Math.abs(c), p3);
+      y = Math.sign(s) * Math.pow(Math.abs(s), p3);
+      break;
+    }
+    case 'emerald':
+    case 'asscher':
+    case 'radiant': {
+      var aspect = (shape === 'emerald') ? P.aspect : 1;
+      var a = 1, b = aspect, corner = P.corner;
+      var r = Math.min(a / Math.abs(c), b / Math.abs(s), corner / (Math.abs(c) + Math.abs(s)));
+      x = r * c; y = r * s; break;
+    }
+    case 'marquise': {
+      var d = 0.55, R = 1;
+      var q = Math.sqrt(Math.max(R * R - d * d * s * s, 0));
+      var r2 = Math.max(d * c + q, -d * c + q);
+      x = r2 * c; y = r2 * s; break;
+    }
+    case 'pear': {
+      var b2 = 1.15;
+      var r3 = (b2 + c) / (b2 + 1);
+      x = r3 * c; y = r3 * s; break;
+    }
+    case 'trillion': {
+      var r4 = 0.5 / Math.max(-s, Math.cos(th - Math.PI / 6), Math.cos(th - 5 * Math.PI / 6));
+      x = r4 * c; y = r4 * s; break;
+    }
+    case 'heart': {
+      x = 16 * Math.pow(Math.sin(th), 3);
+      y = 13 * Math.cos(th) - 5 * Math.cos(2 * th) - 2 * Math.cos(3 * th) - Math.cos(4 * th);
+      break;
+    }
+    default:
+      x = c; y = s;
+  }
+  var o = GEM_SHAPE_OFFSET[shape] || 0;
+  if (o) { var ca = Math.cos(o), sa = Math.sin(o); var x2 = x * ca - y * sa; y = x * sa + y * ca; x = x2; }
+  return { x: x, y: y };
+}
+
+function gemSampleOutline(shape, N, rot, P) {
+  var pts = [];
+  for (var i = 0; i < N; i++) {
+    var pt = gemOutlinePoint(shape, i / N, P);
+    var x = pt.x, y = pt.y;
+    if (rot) { var ca = Math.cos(rot), sa = Math.sin(rot); var x2 = x * ca - y * sa; y = x * sa + y * ca; x = x2; }
+    pts.push({ x: x, y: y });
+  }
+  // 统一包围盒归一化（等比缩放 + 居中）
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (var j = 0; j < pts.length; j++) { minX = Math.min(minX, pts[j].x); maxX = Math.max(maxX, pts[j].x); minY = Math.min(minY, pts[j].y); maxY = Math.max(maxY, pts[j].y); }
+  var cx2 = (minX + maxX) / 2, cy2 = (minY + maxY) / 2;
+  var sc = Math.max(maxX - minX, maxY - minY) / 2 || 1;
+  for (var k = 0; k < pts.length; k++) { pts[k].x = (pts[k].x - cx2) / sc; pts[k].y = (pts[k].y - cy2) / sc; }
+  return pts;
+}
+
+function gemBuildGem(outline, cfg) {
+  var verts = [];
+  function push(x, y, z) { verts.push({ x: x, y: y, z: z }); return verts.length - 1; }
+  var facets = [];
+  var tablePoly = [], girdlePoly = [];
+
+  if (cfg.cut === 'step') {
+    var M = outline.length;
+    var steps = cfg.steps;
+    var rt = cfg.rT;
+    var rings = [];
+    for (var kk = 0; kk <= steps; kk++) {
+      var rad = rt + (1 - rt) * (kk / steps);
+      var zz = -cfg.h * (kk / steps);
+      var ring = [];
+      for (var ii = 0; ii < M; ii++) ring.push(push(outline[ii].x * rad, outline[ii].y * rad, zz));
+      rings.push(ring);
+    }
+    tablePoly = rings[0].slice();
+    for (var k2 = 0; k2 < steps; k2++) {
+      var ra = rings[k2], rb = rings[k2 + 1];
+      for (var i2 = 0; i2 < M; i2++) {
+        var i3 = (i2 + 1) % M;
+        facets.push([ra[i2], ra[i3], rb[i3]]);
+        facets.push([ra[i2], rb[i3], rb[i2]]);
+      }
+    }
+    girdlePoly = rings[steps].slice();
+  } else {
+    var K = cfg.K, N = 2 * K;
+    var rT = cfg.rT, rS = cfg.rS, rB = cfg.rB, h = cfg.h;
+    var tIdx = [], sIdx = [], bIdx = [], gIdx = [];
+    for (var j1 = 0; j1 < K; j1++) tIdx.push(push(outline[2 * j1].x * rT, outline[2 * j1].y * rT, 0));
+    for (var j2 = 0; j2 < K; j2++) sIdx.push(push(outline[2 * j2 + 1].x * rS, outline[2 * j2 + 1].y * rS, -h * 0.22));
+    for (var i4 = 0; i4 < N; i4++) bIdx.push(push(outline[i4].x * rB, outline[i4].y * rB, -h * 0.55));
+    for (var i5 = 0; i5 < N; i5++) gIdx.push(push(outline[i5].x, outline[i5].y, -h));
+    tablePoly = tIdx.slice();
+    girdlePoly = gIdx.slice();
+    // 星面
+    for (var j3 = 0; j3 < K; j3++) facets.push([tIdx[j3], sIdx[j3], tIdx[(j3 + 1) % K]]);
+    // 风筝面（桌面角 → 冠部）
+    for (var j4 = 0; j4 < K; j4++) {
+      var tj = tIdx[j4], sj = sIdx[j4], sj1 = sIdx[(j4 - 1 + K) % K], bj = bIdx[2 * j4];
+      facets.push([tj, sj, bj]);
+      facets.push([tj, bj, sj1]);
+    }
+    // 上腰面（星环 → 冠环）
+    for (var j5 = 0; j5 < K; j5++) {
+      var sj2 = sIdx[j5], b0 = bIdx[2 * j5], b1 = bIdx[2 * j5 + 1], b2 = bIdx[(2 * j5 + 2) % N];
+      facets.push([sj2, b0, b1]);
+      facets.push([sj2, b1, b2]);
+    }
+    // 腰棱面（冠环 → 腰棱）
+    for (var i6 = 0; i6 < N; i6++) {
+      var bb0 = bIdx[i6], bb1 = bIdx[(i6 + 1) % N], gg0 = gIdx[i6], gg1 = gIdx[(i6 + 1) % N];
+      facets.push([bb0, bb1, gg1]);
+      facets.push([bb0, gg1, gg0]);
+    }
+  }
+  return { verts: verts, facets: facets, tablePoly: tablePoly, girdlePoly: girdlePoly };
+}
+
+function gemShade(idx, nx, ny, nz, cfg) {
+  var diff = 0, spec = 0;
+  for (var li = 0; li < GEM_LIGHTS.length; li++) {
+    var L = GEM_LIGHTS[li];
+    var d = nx * L.x + ny * L.y + nz * L.z;
+    if (d > 0) diff += d * L.i;
+    var hx = L.x, hy = L.y, hz = L.z + 1; // 视线方向 (0,0,1)
+    var hl = Math.sqrt(hx * hx + hy * hy + hz * hz) || 1; hx /= hl; hy /= hl; hz /= hl;
+    var sd = nx * hx + ny * hy + nz * hz;
+    if (sd > 0) spec += Math.pow(sd, cfg.shininess) * L.i;
+  }
+  // 低环境光 + 漫反射，亮度限制在 [0,1]，避免整体泛白
+  var amb = 0.14;
+  var br = amb + diff * 0.55;
+  br += (gemRand(idx * 5.1 + 0.73) * 2 - 1) * 0.13;  // 每刻面轻微明暗抖动，增强对比
+  if (br < 0) br = 0; else if (br > 1) br = 1;
+  var r = gemMix(cfg.dark[0], cfg.base[0], br);
+  var g = gemMix(cfg.dark[1], cfg.base[1], br);
+  var b = gemMix(cfg.dark[2], cfg.base[2], br);
+  var sp = Math.min(spec * cfg.sparkle, 2.0);
+  r += cfg.light[0] * sp; g += cfg.light[1] * sp; b += cfg.light[2] * sp;
+  if (cfg.fire > 0 && idx >= 0) {
+    var hue = (idx * 137.507764) % 360;
+    var fc = gemHslToRgb(hue, 0.90, 0.62);
+    var f = sp * cfg.fire * 0.6 + (1 - br) * cfg.fire * 0.05; // 高光火彩 + 暗部细微色散
+    r += fc.r * f; g += fc.g * f; b += fc.b * f;
+  }
+  return [r < 0 ? 0 : (r > 255 ? 255 : r), g < 0 ? 0 : (g > 255 ? 255 : g), b < 0 ? 0 : (b > 255 ? 255 : b)];
+}
+
+// 五种资源宝石参数（来自 tools/gemstone-cut-generator.html 导出 JSON）
+// W=钻石(圆明亮式)  B=蓝宝石(椭圆)  G=祖母绿(阶梯)  R=红宝石(椭圆)  K=黑曜石(公主方)
+var GEM_CUT_PARAMS = {
+  W: { shape: 'round', cut: 'brilliant', symmetry: 22, table: 0.48, crown: 0.24, steps: 3, aspect: 1, corner: 1.35, rotation: 190, sparkle: 0.79, fire: 1.5, shine: 59, base: '#e0e9f5', dark: '#33465c', light: '#ffffff', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
+  B: { shape: 'oval', cut: 'brilliant', symmetry: 8, table: 0.64, crown: 0.22, steps: 4, aspect: 1.35, corner: 1.35, rotation: 0, sparkle: 0.8, fire: 0.35, shine: 55, base: '#1d67c9', dark: '#0f3a52', light: '#c9ecff', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
+  G: { shape: 'emerald', cut: 'step', symmetry: 8, table: 0.57, crown: 0.34, steps: 4, aspect: 1.45, corner: 1.81, rotation: 90, sparkle: 0.82, fire: 0.15, shine: 29, base: '#16a05f', dark: '#07502c', light: '#8dffce', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
+  R: { shape: 'oval', cut: 'brilliant', symmetry: 8, table: 0.5, crown: 0.32, steps: 3, aspect: 1.35, corner: 1.35, rotation: 90, sparkle: 0.8, fire: 0.35, shine: 44, base: '#b5122d', dark: '#4c0611', light: '#f9aeba', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true },
+  K: { shape: 'princess', cut: 'brilliant', symmetry: 12, table: 0.43, crown: 0.28, steps: 4, aspect: 0.96, corner: 1.27, rotation: 90, sparkle: 0.88, fire: 1.2, shine: 42, base: '#2a2d36', dark: '#05060a', light: '#ffffff', bg: '#16121e', size: 0.4, showLines: false, showGirdle: true }
+};
+
+// 在 canvas 上绘制刻面宝石（透明背景；r = 外接半径；参数同生成器）
+function drawFacetedGem(ctx, cx, cy, r, P) {
+  var shape = P.shape || 'round';
+  var cut = P.cut || 'brilliant';
+  var K = Math.max(2, Math.round((P.symmetry === undefined ? 8 : P.symmetry) / 2) * 2); // 保证偶数
+  var rT = P.table === undefined ? 0.5 : P.table;
+  var h = P.crown === undefined ? 0.3 : P.crown;
+  var sparkle = P.sparkle === undefined ? 0.8 : P.sparkle;
+  var fire = P.fire === undefined ? 0.3 : P.fire;
+  var shine = P.shine === undefined ? 40 : P.shine;
+  var aspect = P.aspect === undefined ? 1 : P.aspect;
+  var corner = P.corner === undefined ? 1.35 : P.corner;
+  var steps = Math.max(2, Math.round(P.steps === undefined ? 3 : P.steps));
+  var rot = (P.rotation === undefined ? 0 : P.rotation) * Math.PI / 180;
+  var showLines = P.showLines !== false;
+  var showGirdle = P.showGirdle !== false;
+
+  // 采样轮廓
+  var sampleN = (cut === 'step')
+    ? ((shape === 'emerald' || shape === 'asscher' || shape === 'radiant' || shape === 'princess') ? 8 : 48)
+    : (2 * K);
+  var outline = gemSampleOutline(shape, sampleN, rot, { aspect: aspect, corner: corner });
+
+  // 构建几何
+  var cfg = {
+    cut: cut, K: K, rT: rT,
+    rS: rT + (1 - rT) * 0.20,
+    rB: rT + (1 - rT) * 0.58,
+    h: h, steps: steps,
+    base: gemHexToRgb(P.base),
+    dark: gemHexToRgb(P.dark),
+    light: gemHexToRgb(P.light),
+    sparkle: sparkle, fire: fire, shininess: shine
+  };
+  var gem = gemBuildGem(outline, cfg);
+
+  var scale = r;
+  var V = gem.verts;
+  function X(x) { return cx + x * scale; }
+  function Y(y) { return cy - y * scale; }
+
+  // 绘制刻面
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1;
+  for (var fi = 0; fi < gem.facets.length; fi++) {
+    var tri = gem.facets[fi];
+    var p0 = V[tri[0]], p1 = V[tri[1]], p2 = V[tri[2]];
+    // 法线
+    var e1x = p1.x - p0.x, e1y = p1.y - p0.y, e1z = p1.z - p0.z;
+    var e2x = p2.x - p0.x, e2y = p2.y - p0.y, e2z = p2.z - p0.z;
+    var nx = e1y * e2z - e1z * e2y;
+    var ny = e1z * e2x - e1x * e2z;
+    var nz = e1x * e2y - e1y * e2x;
+    if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+    var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+
+    var col = gemShade(fi, nx, ny, nz, cfg);
+    var fill = 'rgb(' + (col[0] | 0) + ',' + (col[1] | 0) + ',' + (col[2] | 0) + ')';
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(X(p0.x), Y(p0.y));
+    ctx.lineTo(X(p1.x), Y(p1.y));
+    ctx.lineTo(X(p2.x), Y(p2.y));
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke(); // 封住抗锯齿缝隙
+    if (showLines) { ctx.strokeStyle = 'rgba(18,16,28,0.16)'; ctx.stroke(); }
+  }
+
+  // 桌面（平面）：带轻微径向渐变，避免一片死白
+  var tableCol = gemShade(-1, 0, 0, 1, cfg);
+  var tr = 0;
+  for (var ti = 0; ti < gem.tablePoly.length; ti++) { var pp = V[gem.tablePoly[ti]]; var rr2 = Math.sqrt(pp.x * pp.x + pp.y * pp.y); if (rr2 > tr) tr = rr2; }
+  var tg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(tr * scale, 1));
+  tg.addColorStop(0, 'rgb(' + (Math.min(255, tableCol[0] * 1.05) | 0) + ',' + (Math.min(255, tableCol[1] * 1.05) | 0) + ',' + (Math.min(255, tableCol[2] * 1.05) | 0) + ')');
+  tg.addColorStop(1, 'rgb(' + (Math.min(255, tableCol[0] * 0.88) | 0) + ',' + (Math.min(255, tableCol[1] * 0.88) | 0) + ',' + (Math.min(255, tableCol[2] * 0.88) | 0) + ')');
+  ctx.fillStyle = tg;
+  ctx.strokeStyle = 'rgb(' + (tableCol[0] | 0) + ',' + (tableCol[1] | 0) + ',' + (tableCol[2] | 0) + ')';
+  ctx.beginPath();
+  for (var ti2 = 0; ti2 < gem.tablePoly.length; ti2++) {
+    var pp2 = V[gem.tablePoly[ti2]];
+    if (ti2 === 0) ctx.moveTo(X(pp2.x), Y(pp2.y)); else ctx.lineTo(X(pp2.x), Y(pp2.y));
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  if (showLines) { ctx.strokeStyle = 'rgba(18,16,28,0.20)'; ctx.stroke(); }
+
+  // 腰棱（外圈）
+  if (showGirdle && gem.girdlePoly.length) {
+    ctx.beginPath();
+    for (var gi2 = 0; gi2 < gem.girdlePoly.length; gi2++) {
+      var gp = V[gem.girdlePoly[gi2]];
+      if (gi2 === 0) ctx.moveTo(X(gp.x), Y(gp.y)); else ctx.lineTo(X(gp.x), Y(gp.y));
+    }
+    ctx.closePath();
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+    ctx.lineWidth = Math.max(1.2, scale * 0.016);
+    ctx.stroke();
+    // 边线颜色取「高光色 ↔ 主色」的中间调（偏主色）：与各宝石自身颜色呼应，避免刺眼白边
+    var gir = gemHexToRgb(P.light), gib = gemHexToRgb(P.base);
+    ctx.strokeStyle = 'rgba(' + Math.round(gemMix(gir[0], gib[0], 0.55)) + ',' + Math.round(gemMix(gir[1], gib[1], 0.55)) + ',' + Math.round(gemMix(gir[2], gib[2], 0.55)) + ',0.60)';
+    ctx.lineWidth = Math.max(1, scale * 0.006);
+    ctx.stroke();
+  }
+}
+
 // ---------- 纹理工厂 ----------
 function gemTex(colorKey, size) {
   var info = colorKey === 'Y' ? GOLD_INFO : COLOR_INFO[colorKey];
   return makeTex('gem' + colorKey, size, size, function (ctx, w, h) {
-    drawGemChip(ctx, w / 2, h / 2, w / 2 - 1, info.gem, info.gemDark, info.stroke);
+    if (GEM_CUT_PARAMS[colorKey]) {
+      drawFacetedGem(ctx, w / 2, h / 2, w / 2 - 1, GEM_CUT_PARAMS[colorKey]);
+    } else {
+      drawGemChip(ctx, w / 2, h / 2, w / 2 - 1, info.gem, info.gemDark, info.stroke);
+    }
   });
 }
 
@@ -2512,8 +2841,12 @@ function helpGemRow() {
     var x0 = (w - total) / 2 + r;
     var cy = h * 0.36;
     keys.forEach(function (k, i) {
-      var info = COLOR_INFO[k];
-      drawGemChip(ctx, x0 + i * step, cy, r, info.gem, info.gemDark, info.stroke);
+      if (GEM_CUT_PARAMS[k]) {
+        drawFacetedGem(ctx, x0 + i * step, cy, r, GEM_CUT_PARAMS[k]);
+      } else {
+        var info = COLOR_INFO[k];
+        drawGemChip(ctx, x0 + i * step, cy, r, info.gem, info.gemDark, info.stroke);
+      }
       text(ctx, names[i], x0 + i * step, cy + r + 8, 11, 'rgba(223,232,248,0.9)', 'center');
     });
     var gx = x0 + keys.length * step;

@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>宝石切面生成器 · 俯视预览</title>
+<style>
+  :root{
+    --bg:#12101a;
+    --panel:#1b1826;
+    --panel2:#211d30;
+    --line:#322c46;
+    --text:#e9e5f3;
+    --muted:#9a92b0;
+    --accent:#e8b84b;
+    --accent2:#7fd6c2;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    font-family:"Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background:var(--bg); color:var(--text);
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  header{
+    display:flex; align-items:center; gap:14px;
+    padding:12px 18px;
+    background:linear-gradient(90deg,#1b1826,#221d33);
+    border-bottom:1px solid var(--line);
+    flex:0 0 auto;
+  }
+  header h1{font-size:17px; margin:0; font-weight:600; letter-spacing:.5px;}
+  header h1 .dot{color:var(--accent);}
+  header .sub{font-size:12px; color:var(--muted); margin-left:auto;}
+  .btn{
+    background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:7px 12px; font-size:13px; cursor:pointer;
+    transition:.15s;
+  }
+  .btn:hover{border-color:var(--accent); color:var(--accent);}
+  .btn.primary{background:linear-gradient(135deg,#e8b84b,#c98f2b); color:#231a05; border:none; font-weight:600;}
+  .btn.primary:hover{filter:brightness(1.08); color:#231a05;}
+
+  .app{display:flex; flex:1 1 auto; min-height:0;}
+  aside{
+    width:290px; flex:0 0 290px; overflow-y:auto;
+    background:var(--panel); border-right:1px solid var(--line);
+    padding:14px 14px 30px;
+  }
+  aside section{margin-bottom:18px;}
+  aside h2{
+    font-size:12px; text-transform:uppercase; letter-spacing:1.5px;
+    color:var(--muted); margin:0 0 10px; font-weight:600;
+  }
+  .preset-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+  .preset{
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+    background:var(--panel2); border:1px solid var(--line); border-radius:10px;
+    padding:8px 4px 7px; cursor:pointer; transition:.15s;
+  }
+  .preset:hover{border-color:var(--accent); transform:translateY(-1px);}
+  .preset.active{border-color:var(--accent);}
+  .preset .swatch{
+    width:26px; height:26px; border-radius:50%;
+    background:radial-gradient(circle at 32% 30%, var(--l), var(--b));
+    box-shadow:inset 0 0 6px rgba(255,255,255,.35), 0 1px 4px rgba(0,0,0,.5);
+  }
+  .preset .nm{font-size:11px; color:var(--text); text-align:center; line-height:1.1;}
+
+  .row{display:flex; gap:8px; margin-bottom:9px; align-items:center;}
+  .row label{flex:0 0 74px; font-size:12px; color:var(--muted);}
+  select, input[type=color]{
+    flex:1 1 auto; background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:13px;
+  }
+  input[type=color]{padding:2px; height:34px; cursor:pointer;}
+  input[type=range]{flex:1 1 auto; accent-color:var(--accent); cursor:pointer;}
+  .val{flex:0 0 34px; text-align:right; font-size:12px; color:var(--accent); font-variant-numeric:tabular-nums;}
+  .check{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text); margin-bottom:7px;}
+  .check input{accent-color:var(--accent2);}
+  .hint{font-size:11px; color:var(--muted); line-height:1.5;}
+
+  .json-box{
+    width:100%; height:76px; resize:vertical;
+    background:#14111d; color:#cfe3cf; border:1px solid var(--line);
+    border-radius:8px; padding:8px; font-family:ui-monospace, Consolas, "Courier New", monospace;
+    font-size:11px; line-height:1.45; white-space:pre;
+  }
+  .json-box:focus{outline:none; border-color:var(--accent2);}
+  .btn-row{display:flex; gap:8px; margin-top:8px;}
+  .btn-row .btn{flex:1;}
+  .status{font-size:11px; margin-top:7px; min-height:14px; color:var(--accent2); word-break:break-all;}
+  .status.err{color:#ff8a8a;}
+
+  main{flex:1 1 auto; position:relative; min-width:0;}
+  #preview{position:absolute; inset:0;}
+  canvas{display:block; width:100%; height:100%;}
+  .facet-count{
+    position:absolute; left:16px; bottom:14px; font-size:12px; color:var(--muted);
+    background:rgba(20,17,30,.6); border:1px solid var(--line); border-radius:20px;
+    padding:5px 12px; pointer-events:none;
+  }
+
+  ::-webkit-scrollbar{width:9px;}
+  ::-webkit-scrollbar-thumb{background:#332c4a; border-radius:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  @media (max-width:760px){
+    .app{flex-direction:column;}
+    aside{width:100%; flex:0 0 auto; max-height:46vh; border-right:none; border-bottom:1px solid var(--line);}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>💎 宝石切面生成器 <span class="dot">·</span> 俯视预览</h1>
+    <button class="btn" id="btnRandom">🎲 随机</button>
+    <button class="btn primary" id="btnSave">⬇ 导出 PNG</button>
+    <span class="sub">调整参数即时渲染 · 多种切工 / 形状 / 宝石材质</span>
+  </header>
+
+  <div class="app">
+    <aside id="panel">
+      <section>
+        <h2>参数 JSON（复制 / 还原）</h2>
+        <textarea class="json-box" id="jsonBox" spellcheck="false" placeholder="粘贴参数 JSON 后点击「应用参数」，或点击「复制参数」生成当前参数"></textarea>
+        <div class="btn-row">
+          <button class="btn" id="btnCopy">📋 复制参数</button>
+          <button class="btn primary" id="btnApply">⚡ 应用参数</button>
+        </div>
+        <div class="status" id="status"></div>
+      </section>
+
+      <section>
+        <h2>宝石预设</h2>
+        <div class="preset-grid" id="presets"></div>
+      </section>
+
+      <section>
+        <h2>外形与切工</h2>
+        <div class="row">
+          <label>形状</label>
+          <select id="shape"></select>
+        </div>
+        <div class="row">
+          <label>切工方式</label>
+          <select id="cut">
+            <option value="brilliant">明亮式（圆钻 / 星面）</option>
+            <option value="step">阶梯式（祖母绿 / 阿斯切）</option>
+          </select>
+        </div>
+      </section>
+
+      <section>
+        <h2>切工参数</h2>
+        <div class="row">
+          <label>瓣数 / 对称</label>
+          <input type="range" id="symmetry" min="4" max="24" step="2" value="8">
+          <span class="val" id="symmetryV">8</span>
+        </div>
+        <div class="row">
+          <label>桌面大小</label>
+          <input type="range" id="table" min="0.28" max="0.75" step="0.01" value="0.5">
+          <span class="val" id="tableV">0.50</span>
+        </div>
+        <div class="row">
+          <label>冠部高度</label>
+          <input type="range" id="crown" min="0.08" max="0.6" step="0.01" value="0.32">
+          <span class="val" id="crownV">0.32</span>
+        </div>
+        <div class="row">
+          <label>阶梯层数</label>
+          <input type="range" id="steps" min="2" max="6" step="1" value="3">
+          <span class="val" id="stepsV">3</span>
+        </div>
+        <div class="row">
+          <label>长宽比</label>
+          <input type="range" id="aspect" min="0.55" max="1.6" step="0.01" value="1.35">
+          <span class="val" id="aspectV">1.35</span>
+        </div>
+        <div class="row">
+          <label>切角量</label>
+          <input type="range" id="corner" min="1.0" max="2.2" step="0.01" value="1.35">
+          <span class="val" id="cornerV">1.35</span>
+        </div>
+        <div class="row">
+          <label>旋转</label>
+          <input type="range" id="rotation" min="0" max="360" step="1" value="0">
+          <span class="val" id="rotationV">0°</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>光泽与颜色</h2>
+        <div class="row">
+          <label>闪光强度</label>
+          <input type="range" id="sparkle" min="0" max="1.6" step="0.01" value="1.0">
+          <span class="val" id="sparkleV">1.00</span>
+        </div>
+        <div class="row">
+          <label>火彩 / 色散</label>
+          <input type="range" id="fire" min="0" max="1.5" step="0.01" value="1.0">
+          <span class="val" id="fireV">1.00</span>
+        </div>
+        <div class="row">
+          <label>高光锐度</label>
+          <input type="range" id="shine" min="16" max="100" step="1" value="40">
+          <span class="val" id="shineV">40</span>
+        </div>
+        <div class="row">
+          <label>主色</label>
+          <input type="color" id="base" value="#e0e9f5">
+        </div>
+        <div class="row">
+          <label>暗部色</label>
+          <input type="color" id="dark" value="#33465c">
+        </div>
+        <div class="row">
+          <label>高光色</label>
+          <input type="color" id="light" value="#ffffff">
+        </div>
+      </section>
+
+      <section>
+        <h2>背景</h2>
+        <div class="row">
+          <label>背景色</label>
+          <input type="color" id="bg" value="#16121e">
+        </div>
+        <div class="row">
+          <label>宝石大小</label>
+          <input type="range" id="size" min="0.4" max="1.3" step="0.01" value="0.92">
+          <span class="val" id="sizeV">0.92</span>
+        </div>
+        <div class="check"><input type="checkbox" id="showLines" checked> 显示刻面棱线</div>
+        <div class="check"><input type="checkbox" id="showGirdle" checked> 显示腰棱（外圈）</div>
+        <div class="hint">提示：选择不同「形状」会自动套用合适的切工方式与比例；再拖动滑杆可自由微调。</div>
+      </section>
+    </aside>
+
+    <main>
+      <div id="preview"><canvas id="cv"></canvas></div>
+      <div class="facet-count" id="facetCount"></div>
+    </main>
+  </div>
+
+<script>
+"use strict";
+
+/* ============ 基础工具 ============ */
+function hexToRgb(h){
+  h = h.replace('#','');
+  if(h.length===3) h = h.split('').map(c=>c+c).join('');
+  const n = parseInt(h,16);
+  return [(n>>16)&255, (n>>8)&255, n&255];
+}
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function mix(a,b,t){ return a + (b-a)*t; }
+function rand(i){
+  const s = Math.sin(i*127.1 + 311.7)*43758.5453123;
+  return s - Math.floor(s);
+}
+function hslToRgb(h,s,l){
+  h = ((h%360)+360)%360/360;
+  const q = l<0.5 ? l*(1+s) : l+s-l*s;
+  const p = 2*l - q;
+  const f = (t)=>{ t=((t%1)+1)%1;
+    if(t<1/6) return p+(q-p)*6*t;
+    if(t<1/2) return q;
+    if(t<2/3) return p+(q-p)*(2/3-t)*6;
+    return p; };
+  return {r:f(h+1/3)*255, g:f(h)*255, b:f(h-1/3)*255};
+}
+function shadeHex(hex, amt){ // amt: -1..1 亮度偏移
+  const [r,g,b] = hexToRgb(hex);
+  const f = c => amt>=0 ? Math.round(c+(255-c)*amt) : Math.round(c*(1+amt));
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
+
+/* ============ 形状定义（单位轮廓，最终统一归一化） ============ */
+const SHAPE_OFFSET = {
+  round:0, oval:0, cushion:0, princess:0,
+  marquise:Math.PI/2, pear:Math.PI/2, heart:0,
+  trillion:0, emerald:0, asscher:0, radiant:0
+};
+
+function outlinePoint(shape, t, P){
+  const th = t*Math.PI*2;
+  const c = Math.cos(th), s = Math.sin(th);
+  let x, y;
+  switch(shape){
+    case 'round':
+      x = c; y = s; break;
+    case 'oval': {
+      const k = P.aspect;
+      x = c; y = k*s; break;
+    }
+    case 'cushion': {
+      const n = 2.6, p = 2/n;
+      x = Math.sign(c)*Math.pow(Math.abs(c),p);
+      y = Math.sign(s)*Math.pow(Math.abs(s),p);
+      break;
+    }
+    case 'princess': {
+      const n = 8, p = 2/n;
+      x = Math.sign(c)*Math.pow(Math.abs(c),p);
+      y = Math.sign(s)*Math.pow(Math.abs(s),p);
+      break;
+    }
+    case 'emerald':
+    case 'asscher':
+    case 'radiant': {
+      const aspect = (shape==='emerald') ? P.aspect : 1;
+      const a = 1, b = aspect, corner = P.corner;
+      const r = Math.min(a/Math.abs(c), b/Math.abs(s), corner/(Math.abs(c)+Math.abs(s)));
+      x = r*c; y = r*s; break;
+    }
+    case 'marquise': {
+      const d = 0.55, R = 1;
+      const q = Math.sqrt(Math.max(R*R - d*d*s*s, 0));
+      const r = Math.max(d*c+q, -d*c+q);
+      x = r*c; y = r*s; break;
+    }
+    case 'pear': {
+      const b = 1.15;
+      const r = (b + c)/(b + 1);
+      x = r*c; y = r*s; break;
+    }
+    case 'trillion': {
+      const r = 0.5/Math.max(-s, Math.cos(th-Math.PI/6), Math.cos(th-5*Math.PI/6));
+      x = r*c; y = r*s; break;
+    }
+    case 'heart': {
+      const hx = 16*Math.pow(Math.sin(th),3);
+      const hy = 13*Math.cos(th) - 5*Math.cos(2*th) - 2*Math.cos(3*th) - Math.cos(4*th);
+      x = hx; y = hy; break;
+    }
+    default:
+      x = c; y = s;
+  }
+  const o = SHAPE_OFFSET[shape] || 0;
+  if(o){ const ca=Math.cos(o), sa=Math.sin(o); const x2=x*ca-y*sa; y=x*sa+y*ca; x=x2; }
+  return {x, y};
+}
+
+function sampleOutline(shape, N, rot, P){
+  const pts = [];
+  for(let i=0;i<N;i++){
+    let {x,y} = outlinePoint(shape, i/N, P);
+    if(rot){ const ca=Math.cos(rot), sa=Math.sin(rot); const x2=x*ca-y*sa; y=x*sa+y*ca; x=x2; }
+    pts.push({x,y});
+  }
+  // 统一包围盒归一化（等比缩放 + 居中）
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(const p of pts){ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); }
+  const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+  const sc = Math.max(maxX-minX, maxY-minY)/2 || 1;
+  for(const p of pts){ p.x=(p.x-cx)/sc; p.y=(p.y-cy)/sc; }
+  return pts;
+}
+
+/* ============ 几何构建 ============ */
+function buildGem(outline, cfg){
+  const verts = [];
+  const push = (x,y,z)=>{ verts.push({x,y,z}); return verts.length-1; };
+  const facets = [];
+  let tablePoly = [], girdlePoly = [];
+
+  if(cfg.cut === 'step'){
+    const M = outline.length;
+    const steps = cfg.steps;
+    const rt = cfg.rT;
+    const rings = [];
+    for(let k=0;k<=steps;k++){
+      const rad = rt + (1-rt)*(k/steps);
+      const z = -cfg.h*(k/steps);
+      const ring = [];
+      for(let i=0;i<M;i++) ring.push(push(outline[i].x*rad, outline[i].y*rad, z));
+      rings.push(ring);
+    }
+    tablePoly = rings[0].slice();
+    for(let k=0;k<steps;k++){
+      const a = rings[k], b = rings[k+1];
+      for(let i=0;i<M;i++){
+        const i2 = (i+1)%M;
+        facets.push([a[i], a[i2], b[i2]]);
+        facets.push([a[i], b[i2], b[i]]);
+      }
+    }
+    girdlePoly = rings[steps].slice();
+  } else {
+    const K = cfg.K, N = 2*K;
+    const rt=cfg.rT, rs=cfg.rS, rb=cfg.rB, h=cfg.h;
+    const tIdx=[], sIdx=[], bIdx=[], gIdx=[];
+    for(let j=0;j<K;j++) tIdx.push(push(outline[2*j].x*rt,   outline[2*j].y*rt,   0));
+    for(let j=0;j<K;j++) sIdx.push(push(outline[2*j+1].x*rs, outline[2*j+1].y*rs, -h*0.22));
+    for(let i=0;i<N;i++) bIdx.push(push(outline[i].x*rb,     outline[i].y*rb,     -h*0.55));
+    for(let i=0;i<N;i++) gIdx.push(push(outline[i].x,        outline[i].y,        -h));
+    tablePoly = tIdx.slice();
+    girdlePoly = gIdx.slice();
+    // 星面
+    for(let j=0;j<K;j++) facets.push([tIdx[j], sIdx[j], tIdx[(j+1)%K]]);
+    // 风筝面（桌面角 → 冠部）
+    for(let j=0;j<K;j++){
+      const tj=tIdx[j], sj=sIdx[j], sj1=sIdx[(j-1+K)%K], bj=bIdx[2*j];
+      facets.push([tj, sj, bj]);
+      facets.push([tj, bj, sj1]);
+    }
+    // 上腰面（星环 → 冠环）
+    for(let j=0;j<K;j++){
+      const sj=sIdx[j], b0=bIdx[2*j], b1=bIdx[2*j+1], b2=bIdx[(2*j+2)%N];
+      facets.push([sj, b0, b1]);
+      facets.push([sj, b1, b2]);
+    }
+    // 腰棱面（冠环 → 腰棱）
+    for(let i=0;i<N;i++){
+      const b0=bIdx[i], b1=bIdx[(i+1)%N], g0=gIdx[i], g1=gIdx[(i+1)%N];
+      facets.push([b0, b1, g1]);
+      facets.push([b0, g1, g0]);
+    }
+  }
+  return {verts, facets, tablePoly, girdlePoly};
+}
+
+/* ============ 光照 / 着色 ============ */
+const LIGHTS = [
+  {x:0.311,  y:0.259,  z:0.914, i:0.78},  // 顶部主光：照亮桌面
+  {x:0.890,  y:0.356,  z:0.286, i:0.62},  // 侧面主光：拉开刻面明暗
+  {x:-0.908, y:-0.324, z:0.264, i:0.50}   // 侧面补光：另一方向对比
+];
+
+function shade(idx, nx, ny, nz, cfg){
+  let diff=0, spec=0;
+  for(const L of LIGHTS){
+    const d = nx*L.x + ny*L.y + nz*L.z;
+    if(d>0) diff += d*L.i;
+    let hx=L.x, hy=L.y, hz=L.z+1; // 视线方向 (0,0,1)
+    const hl=Math.hypot(hx,hy,hz)||1; hx/=hl; hy/=hl; hz/=hl;
+    const sd = nx*hx+ny*hy+nz*hz;
+    if(sd>0) spec += Math.pow(sd, cfg.shininess)*L.i;
+  }
+  // 低环境光 + 漫反射，亮度限制在 [0,1]，避免整体泛白
+  const amb = 0.14;
+  let br = amb + diff*0.55;
+  br += (rand(idx*5.1 + 0.73)*2 - 1)*0.13;  // 每刻面轻微明暗抖动，增强对比
+  if(br<0) br=0; else if(br>1) br=1;
+  let r = mix(cfg.dark[0], cfg.base[0], br);
+  let g = mix(cfg.dark[1], cfg.base[1], br);
+  let b = mix(cfg.dark[2], cfg.base[2], br);
+  const sp = Math.min(spec*cfg.sparkle, 2.0);
+  r += cfg.light[0]*sp; g += cfg.light[1]*sp; b += cfg.light[2]*sp;
+  if(cfg.fire>0 && idx>=0){
+    const hue = (idx*137.507764)%360;
+    const fc = hslToRgb(hue, 0.90, 0.62);
+    const f = sp*cfg.fire*0.6 + (1-br)*cfg.fire*0.05; // 高光火彩 + 暗部细微色散
+    r += fc.r*f; g += fc.g*f; b += fc.b*f;
+  }
+  return [r<0?0:(r>255?255:r), g<0?0:(g>255?255:g), b<0?0:(b>255?255:b)];
+}
+
+/* ============ 宝石预设 ============ */
+const GEMS = [
+  {name:'钻石',   shape:'round',   cut:'brilliant', base:'#e0e9f5', dark:'#33465c', light:'#ffffff', fire:1.1,  sparkle:1.05, shine:55},
+  {name:'红宝石', shape:'oval',    cut:'brilliant', base:'#d01f3d', dark:'#5c0a18', light:'#ff879a', fire:0.35, sparkle:0.8,  shine:44},
+  {name:'蓝宝石', shape:'cushion', cut:'brilliant', base:'#2450d0', dark:'#0c1c55', light:'#93adff', fire:0.3,  sparkle:0.75, shine:50},
+  {name:'祖母绿', shape:'emerald', cut:'step',      base:'#16a05f', dark:'#07502c', light:'#8dffce', fire:0.2,  sparkle:0.5,  shine:30},
+  {name:'黑钻石', shape:'round',   cut:'brilliant', base:'#2a2d36', dark:'#05060a', light:'#ffffff', fire:1.2,  sparkle:1.35, shine:88},
+  {name:'黑玛瑙', shape:'oval',    cut:'brilliant', base:'#3a3a42', dark:'#0a0a0d', light:'#9a9aa6', fire:0.0,  sparkle:0.15, shine:20},
+  {name:'紫水晶', shape:'pear',    cut:'brilliant', base:'#8e44ad', dark:'#3a1a4a', light:'#e2b8ff', fire:0.4,  sparkle:0.7,  shine:48},
+  {name:'黄水晶', shape:'radiant', cut:'brilliant', base:'#e2a52e', dark:'#6e4c0c', light:'#ffe6b0', fire:0.4,  sparkle:0.8,  shine:55},
+  {name:'海蓝宝', shape:'emerald', cut:'step',      base:'#54c8d4', dark:'#174a50', light:'#d8f9ff', fire:0.2,  sparkle:0.5,  shine:34},
+  {name:'石榴石', shape:'round',   cut:'brilliant', base:'#9a1230', dark:'#3d0511', light:'#ff6a86', fire:0.3,  sparkle:0.75, shine:44},
+  {name:'托帕石', shape:'oval',    cut:'brilliant', base:'#3aa0d8', dark:'#0f3a52', light:'#c9ecff', fire:0.35, sparkle:0.8,  shine:55},
+  {name:'橄榄石', shape:'cushion', cut:'brilliant', base:'#a6c42a', dark:'#46540a', light:'#e8ffa6', fire:0.3,  sparkle:0.7,  shine:44}
+];
+
+const SHAPES = [
+  {id:'round',   name:'圆形',       cut:'brilliant', aspect:1.0,  corner:1.35, sym:8},
+  {id:'oval',    name:'椭圆形',     cut:'brilliant', aspect:1.35, corner:1.35, sym:8},
+  {id:'cushion', name:'垫形',       cut:'brilliant', aspect:1.0,  corner:1.35, sym:8},
+  {id:'princess',name:'公主方',     cut:'brilliant', aspect:1.0,  corner:1.25, sym:8},
+  {id:'marquise',name:'马眼形',     cut:'brilliant', aspect:1.0,  corner:1.35, sym:8},
+  {id:'pear',    name:'梨形',       cut:'brilliant', aspect:1.0,  corner:1.35, sym:8},
+  {id:'heart',   name:'心形',       cut:'brilliant', aspect:1.0,  corner:1.35, sym:8},
+  {id:'trillion',name:'三角形',     cut:'brilliant', aspect:1.0,  corner:1.35, sym:6},
+  {id:'emerald', name:'祖母绿形',   cut:'step',      aspect:1.45, corner:1.55, sym:8},
+  {id:'asscher', name:'阿斯切',     cut:'step',      aspect:1.0,  corner:1.4,  sym:8},
+  {id:'radiant', name:'雷迪恩',     cut:'brilliant', aspect:1.0,  corner:1.25, sym:8}
+];
+
+/* ============ DOM / UI ============ */
+function $(id){ return document.getElementById(id); }
+
+function initUI(){
+  // 形状下拉
+  const shapeSel = $('shape');
+  SHAPES.forEach(s=>{ const o=document.createElement('option'); o.value=s.id; o.textContent=s.name; shapeSel.appendChild(o); });
+  // 预设按钮
+  const grid = $('presets');
+  GEMS.forEach((g,i)=>{
+    const d = document.createElement('div');
+    d.className = 'preset';
+    d.title = g.name;
+    d.innerHTML = `<div class="swatch" style="--l:${g.light};--b:${g.base}"></div><span class="nm">${g.name}</span>`;
+    d.onclick = ()=>applyPreset(i);
+    grid.appendChild(d);
+  });
+
+  // 事件
+  document.querySelectorAll('#panel input, #panel select').forEach(el=>{
+    el.addEventListener('input', ()=>render());
+    el.addEventListener('change', ()=>render());
+  });
+  shapeSel.addEventListener('change', onShapeChange);
+  $('btnRandom').onclick = randomize;
+  $('btnSave').onclick = savePng;
+  $('btnCopy').onclick = copyParams;
+  $('btnApply').onclick = applyParamsFromBox;
+
+  onShapeChange();
+  applyPreset(0);
+  resize();
+}
+
+function setVal(id, v){ $(id).value = v; }
+
+function onShapeChange(){
+  const s = $('shape').value;
+  const def = SHAPES.find(x=>x.id===s) || SHAPES[0];
+  setVal('cut', def.cut);
+  setVal('aspect', def.aspect);
+  setVal('corner', def.corner);
+  setVal('symmetry', def.sym);
+  syncLabel('aspect', def.aspect);
+  syncLabel('corner', def.corner);
+  syncLabel('symmetry', def.sym);
+  render();
+}
+
+function applyPreset(i){
+  const g = GEMS[i];
+  setVal('shape', g.shape);
+  setVal('cut', g.cut);
+  setVal('base', g.base);
+  setVal('dark', g.dark);
+  setVal('light', g.light);
+  setVal('sparkle', g.sparkle);
+  setVal('fire', g.fire);
+  setVal('shine', g.shine);
+  onShapeChange();
+  // 高亮预设
+  document.querySelectorAll('.preset').forEach((el,j)=>el.classList.toggle('active', j===i));
+  render();
+}
+
+function randomize(){
+  const g = GEMS[Math.floor(Math.random()*GEMS.length)];
+  const s = SHAPES[Math.floor(Math.random()*SHAPES.length)];
+  setVal('shape', s.id);
+  setVal('cut', Math.random()<0.5 ? 'brilliant' : 'step');
+  setVal('base', g.base); setVal('dark', g.dark); setVal('light', g.light);
+  setVal('sparkle', (Math.random()*1.4+0.1).toFixed(2));
+  setVal('fire', (Math.random()*1.2).toFixed(2));
+  setVal('shine', Math.round(20+Math.random()*60));
+  onShapeChange();
+  setVal('cut', Math.random()<0.5 ? 'brilliant' : 'step');
+  setVal('symmetry', [6,8,10,12,16][Math.floor(Math.random()*5)]);
+  setVal('table', (0.4+Math.random()*0.3).toFixed(2));
+  setVal('crown', (0.2+Math.random()*0.3).toFixed(2));
+  setVal('rotation', Math.floor(Math.random()*360));
+  document.querySelectorAll('.preset').forEach(el=>el.classList.remove('active'));
+  render();
+}
+
+function savePng(){
+  const a = document.createElement('a');
+  a.download = 'gemstone.png';
+  a.href = $('cv').toDataURL('image/png');
+  a.click();
+}
+
+/* ============ 参数 JSON 序列化 / 还原 ============ */
+function collectParams(){
+  return {
+    shape: $('shape').value,
+    cut: $('cut').value,
+    symmetry: +$('symmetry').value,
+    table: +$('table').value,
+    crown: +$('crown').value,
+    steps: +$('steps').value,
+    aspect: +$('aspect').value,
+    corner: +$('corner').value,
+    rotation: +$('rotation').value,
+    sparkle: +$('sparkle').value,
+    fire: +$('fire').value,
+    shine: +$('shine').value,
+    base: $('base').value,
+    dark: $('dark').value,
+    light: $('light').value,
+    bg: $('bg').value,
+    size: +$('size').value,
+    showLines: $('showLines').checked,
+    showGirdle: $('showGirdle').checked
+  };
+}
+
+function normHex(v, d){
+  if(typeof v !== 'string') return d;
+  const s = v.trim().replace('#','');
+  if(/^[0-9a-fA-F]{6}$/.test(s)) return '#'+s.toLowerCase();
+  if(/^[0-9a-fA-F]{3}$/.test(s)) return '#'+s.split('').map(c=>c+c).join('').toLowerCase();
+  return d;
+}
+
+function numOr(v, d, min, max){
+  const n = Number(v);
+  if(!isFinite(n)) return d;
+  return Math.min(max, Math.max(min, n));
+}
+
+function applyParams(obj){
+  if(!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('参数必须是 JSON 对象');
+  const has = k => obj[k] !== undefined && obj[k] !== null;
+  if(has('shape') && SHAPES.some(s=>s.id===obj.shape)) setVal('shape', obj.shape);
+  if(has('cut') && (obj.cut==='brilliant' || obj.cut==='step')) setVal('cut', obj.cut);
+  if(has('symmetry')){
+    let s = Number(obj.symmetry);
+    if(isFinite(s)){ s = Math.min(24, Math.max(4, 2*Math.round(s/2))); setVal('symmetry', s); }
+  }
+  if(has('table')) setVal('table', numOr(obj.table, 0.5, 0.28, 0.75));
+  if(has('crown')) setVal('crown', numOr(obj.crown, 0.32, 0.08, 0.6));
+  if(has('steps')) setVal('steps', Math.round(numOr(obj.steps, 3, 2, 6)));
+  if(has('aspect')) setVal('aspect', numOr(obj.aspect, 1.0, 0.55, 1.6));
+  if(has('corner')) setVal('corner', numOr(obj.corner, 1.35, 1.0, 2.2));
+  if(has('rotation')) setVal('rotation', numOr(obj.rotation, 0, 0, 360));
+  if(has('sparkle')) setVal('sparkle', numOr(obj.sparkle, 1.0, 0, 1.6));
+  if(has('fire')) setVal('fire', numOr(obj.fire, 1.0, 0, 1.5));
+  if(has('shine')) setVal('shine', numOr(obj.shine, 40, 16, 100));
+  if(has('size')) setVal('size', numOr(obj.size, 0.92, 0.4, 1.3));
+  if(has('base')) setVal('base', normHex(obj.base, $('base').value));
+  if(has('dark')) setVal('dark', normHex(obj.dark, $('dark').value));
+  if(has('light')) setVal('light', normHex(obj.light, $('light').value));
+  if(has('bg')) setVal('bg', normHex(obj.bg, $('bg').value));
+  if(typeof obj.showLines === 'boolean') $('showLines').checked = obj.showLines;
+  if(typeof obj.showGirdle === 'boolean') $('showGirdle').checked = obj.showGirdle;
+  document.querySelectorAll('.preset').forEach(el=>el.classList.remove('active'));
+  render();
+}
+
+function setStatus(msg, isErr){
+  const el = $('status');
+  el.textContent = msg;
+  el.className = 'status' + (isErr ? ' err' : '');
+  clearTimeout(setStatus._t);
+  setStatus._t = setTimeout(()=>{ el.textContent=''; }, 2800);
+}
+
+function fallbackCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try{ document.execCommand('copy'); }catch(e){}
+  document.body.removeChild(ta);
+}
+
+function copyParams(){
+  const json = JSON.stringify(collectParams(), null, 2);
+  $('jsonBox').value = json;
+  const ok = ()=>setStatus('✅ 参数 JSON 已生成并复制到剪贴板');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(json).then(ok).catch(()=>{ fallbackCopy(json); ok(); });
+  } else {
+    fallbackCopy(json); ok();
+  }
+}
+
+function applyParamsFromBox(){
+  const txt = $('jsonBox').value.trim();
+  if(!txt){ setStatus('⚠ 请先粘贴 JSON 参数', true); return; }
+  let obj;
+  try{ obj = JSON.parse(txt); }
+  catch(e){ setStatus('❌ JSON 解析失败：' + e.message, true); return; }
+  try{
+    applyParams(obj);
+    setStatus('✅ 参数已应用并刷新预览');
+  }catch(e){
+    setStatus('❌ 应用失败：' + e.message, true);
+  }
+}
+
+function syncLabel(id, v){
+  const map = {
+    symmetry:v=>v, table:v=>Number(v).toFixed(2),
+    crown:v=>Number(v).toFixed(2), steps:v=>v,
+    aspect:v=>Number(v).toFixed(2), corner:v=>Number(v).toFixed(2),
+    rotation:v=>Math.round(v)+'°', sparkle:v=>Number(v).toFixed(2),
+    fire:v=>Number(v).toFixed(2), shine:v=>Math.round(v), size:v=>Number(v).toFixed(2)
+  };
+  const el = $(id+'V');
+  if(el) el.textContent = map[id] ? map[id](v) : v;
+}
+
+/* ============ 渲染 ============ */
+const canvas = $('cv');
+const wrap = $('preview');
+const ctx = canvas.getContext('2d');
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  canvas.width = Math.max(1, Math.round(w*dpr));
+  canvas.height = Math.max(1, Math.round(h*dpr));
+  canvas.style.width = w+'px';
+  canvas.style.height = h+'px';
+  render();
+}
+if(typeof ResizeObserver!=='undefined') new ResizeObserver(resize).observe(wrap);
+window.addEventListener('resize', resize);
+
+function render(){
+  const W = canvas.width, H = canvas.height;
+  if(!W || !H) return;
+
+  // 读取参数
+  const shape = $('shape').value;
+  const cut = $('cut').value;
+  const K = Math.max(2, Math.round(+$('symmetry').value/2)*2); // 保证偶数
+  const rT = +$('table').value;
+  const h = +$('crown').value;
+  const sparkle = +$('sparkle').value;
+  const fire = +$('fire').value;
+  const shine = +$('shine').value;
+  const aspect = +$('aspect').value;
+  const corner = +$('corner').value;
+  const steps = Math.max(2, Math.round(+$('steps').value));
+  const rot = (+$('rotation').value)*Math.PI/180;
+  const size = +$('size').value;
+  const showLines = $('showLines').checked;
+  const showGirdle = $('showGirdle').checked;
+  const bgHex = $('bg').value;
+
+  // 同步显示标签
+  ['symmetry','table','crown','steps','aspect','corner','rotation','sparkle','fire','shine','size'].forEach(id=>syncLabel(id, $(id).value));
+
+  // 采样轮廓
+  const P = {aspect, corner};
+  const sampleN = (cut==='step')
+    ? ((shape==='emerald'||shape==='asscher'||shape==='radiant'||shape==='princess') ? 8 : 48)
+    : (2*K);
+  const outline = sampleOutline(shape, sampleN, rot, P);
+
+  // 构建几何
+  const rS = rT + (1-rT)*0.20;
+  const rB = rT + (1-rT)*0.58;
+  const cfg = {
+    cut, K, rT, rS, rB, h, steps,
+    base: hexToRgb($('base').value),
+    dark: hexToRgb($('dark').value),
+    light: hexToRgb($('light').value),
+    sparkle, fire, shininess: shine
+  };
+  const gem = buildGem(outline, cfg);
+
+  // 比例
+  const scale = Math.min(W, H)*0.5*0.86*size;
+  const cx = W/2, cy = H/2;
+  const X = x => cx + x*scale;
+  const Y = y => cy - y*scale;
+
+  // 背景
+  const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W,H)*0.7);
+  bg.addColorStop(0, shadeHex(bgHex, 0.10));
+  bg.addColorStop(0.55, bgHex);
+  bg.addColorStop(1, shadeHex(bgHex, -0.45));
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,W,H);
+
+  // 投影
+  const sh = ctx.createRadialGradient(cx, cy+scale*0.02, scale*0.1, cx, cy+scale*0.02, scale*1.12);
+  sh.addColorStop(0, 'rgba(0,0,0,0.45)');
+  sh.addColorStop(0.6, 'rgba(0,0,0,0.22)');
+  sh.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh;
+  ctx.beginPath();
+  ctx.arc(cx, cy+scale*0.02, scale*1.12, 0, Math.PI*2);
+  ctx.fill();
+
+  // 绘制刻面
+  const V = gem.verts;
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1;
+
+  for(let fi=0; fi<gem.facets.length; fi++){
+    const tri = gem.facets[fi];
+    const p0=V[tri[0]], p1=V[tri[1]], p2=V[tri[2]];
+    // 法线
+    const e1x=p1.x-p0.x, e1y=p1.y-p0.y, e1z=p1.z-p0.z;
+    const e2x=p2.x-p0.x, e2y=p2.y-p0.y, e2z=p2.z-p0.z;
+    let nx=e1y*e2z - e1z*e2y;
+    let ny=e1z*e2x - e1x*e2z;
+    let nz=e1x*e2y - e1y*e2x;
+    if(nz<0){ nx=-nx; ny=-ny; nz=-nz; }
+    const nl = Math.hypot(nx,ny,nz)||1; nx/=nl; ny/=nl; nz/=nl;
+
+    const col = shade(fi, nx, ny, nz, cfg);
+    const fill = `rgb(${col[0]|0},${col[1]|0},${col[2]|0})`;
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = fill;
+    ctx.beginPath();
+    ctx.moveTo(X(p0.x), Y(p0.y));
+    ctx.lineTo(X(p1.x), Y(p1.y));
+    ctx.lineTo(X(p2.x), Y(p2.y));
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke(); // 封住抗锯齿缝隙
+    if(showLines){
+      ctx.strokeStyle = 'rgba(18,16,28,0.16)';
+      ctx.stroke();
+    }
+  }
+
+  // 桌面（平面）：带轻微径向渐变，避免一片死白
+  const tableCol = shade(-1, 0, 0, 1, cfg);
+  let tr = 0;
+  for(const i of gem.tablePoly){ const p=V[i]; const rr=Math.hypot(p.x,p.y); if(rr>tr) tr=rr; }
+  const tg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(tr*scale, 1));
+  tg.addColorStop(0, `rgb(${Math.min(255,tableCol[0]*1.05)|0},${Math.min(255,tableCol[1]*1.05)|0},${Math.min(255,tableCol[2]*1.05)|0})`);
+  tg.addColorStop(1, `rgb(${Math.min(255,tableCol[0]*0.88)|0},${Math.min(255,tableCol[1]*0.88)|0},${Math.min(255,tableCol[2]*0.88)|0})`);
+  ctx.fillStyle = tg;
+  ctx.strokeStyle = `rgb(${tableCol[0]|0},${tableCol[1]|0},${tableCol[2]|0})`;
+  ctx.beginPath();
+  for(let i=0;i<gem.tablePoly.length;i++){
+    const p=V[gem.tablePoly[i]];
+    i===0 ? ctx.moveTo(X(p.x),Y(p.y)) : ctx.lineTo(X(p.x),Y(p.y));
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  if(showLines){
+    ctx.strokeStyle = 'rgba(18,16,28,0.20)';
+    ctx.stroke();
+  }
+
+  // 腰棱（外圈）
+  if(showGirdle && gem.girdlePoly.length){
+    ctx.beginPath();
+    for(let i=0;i<gem.girdlePoly.length;i++){
+      const p=V[gem.girdlePoly[i]];
+      i===0 ? ctx.moveTo(X(p.x),Y(p.y)) : ctx.lineTo(X(p.x),Y(p.y));
+    }
+    ctx.closePath();
+    ctx.lineJoin='round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.32)';
+    ctx.lineWidth = Math.max(1.2, scale*0.016);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(245,245,252,0.85)';
+    ctx.lineWidth = Math.max(1, scale*0.006);
+    ctx.stroke();
+  }
+
+  // 刻面数量显示
+  const total = gem.facets.length + 1;
+  $('facetCount').textContent =
+    `总刻面：${total}（三角面 ${gem.facets.length} + 桌面 1） · 形状：${shape} · 切工：${cut==='step'?'阶梯式':'明亮式'}`;
+}
+
+/* 初始启动（浏览器环境） */
+if(typeof document!=='undefined' && document.getElementById('cv')) initUI();
+</script>
+</body>
+</html>
