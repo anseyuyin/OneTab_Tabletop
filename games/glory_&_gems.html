@@ -755,10 +755,12 @@ function uiIsSelectable(g, key) {
 // 点击目标：切换选中状态
 function uiToggleSelect(g, key) {
   if (g.phase !== 'action') return false;
-  if (!uiIsSelectable(g, key)) return false;
-  var p = g.players[g.current];
+  // 已选中的目标再次点击 = 取消选择（需先于 uiIsSelectable 判断，
+  // 因为可选性检查对已选项返回 false，否则取消分支永远不可达）
   var idx = UI.selected.indexOf(key);
   if (idx >= 0) { UI.selected.splice(idx, 1); return true; }
+  if (!uiIsSelectable(g, key)) return false;
+  var p = g.players[g.current];
   switch (UI.mode) {
     case 'take3':
       if (UI.selected.length >= take3MaxPick(g, p)) return false;
@@ -1350,14 +1352,14 @@ function glowTex(w, h, color) {
   var col = color === 'blue' ? '#3aa0ff' : color === 'gold' ? '#ffd75e' : '#35e06a';
   return makeTex('glow' + color, w, h, function (ctx, W, H) {
     ctx.shadowColor = col;
-    ctx.shadowBlur = Math.min(10, W * 0.12);
-    ctx.lineWidth = Math.max(2.5, W * 0.05);
+    ctx.shadowBlur = Math.min(6, W * 0.07);
+    ctx.lineWidth = Math.max(1.2, W * 0.022);
     ctx.strokeStyle = col;
     rr(ctx, W * 0.09, H * 0.09, W * 0.82, H * 0.82, Math.min(10, W * 0.12));
     ctx.stroke();
-    // 第二层加强
-    ctx.shadowBlur = Math.min(4, W * 0.06);
-    ctx.lineWidth = Math.max(1.5, W * 0.028);
+    // 第二层加强（细描边，仅强化边缘清晰度）
+    ctx.shadowBlur = Math.min(2, W * 0.03);
+    ctx.lineWidth = Math.max(0.7, W * 0.012);
     rr(ctx, W * 0.09, H * 0.09, W * 0.82, H * 0.82, Math.min(10, W * 0.12));
     ctx.stroke();
   });
