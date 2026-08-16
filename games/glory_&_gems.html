@@ -1631,10 +1631,14 @@ FLY.pulse = function (str, pos, size, color, opts) {
 // 每帧更新（由 animate 调用）：推进位置/缩放/透明度，落地销毁并触发完成回调
 FLY.update = function (t) {
   var arr = FLY._flights;
+  // 用墙钟推进动画：长任务（如噩梦 MCTS 的 ~700ms 同步搜索）阻塞后，
+  // rAF 补发的回调时间戳仍是阻塞前调度帧的旧值 → el 瞬间超过 dur → 飞行物“瞬移”。
+  // Date.now() 不受影响；正常帧率下两者每帧误差 <1ms，行为不变。
+  var now = Date.now();
   for (var i = arr.length - 1; i >= 0; i--) {
     var f = arr[i];
-    if (!f.started) { f.t0 = t; f.started = true; }
-    var el = t - f.t0;
+    if (!f.started) { f.t0 = now; f.started = true; }
+    var el = now - f.t0;
     if (el < f.opts.delay) continue;   // 尚未起飞
     if (f.pulse) {
       // 数字脉动：缩放 1 → peak → 1（正弦缓动，非线性节奏）
@@ -3106,7 +3110,7 @@ var AISetupModal = {
           '<div class="ai-sec" style="font-size:12px;color:rgba(223,232,248,.72);line-height:1.8;text-align:center">' +
           '点击方位按钮循环切换：<b style="color:#dfe8f8">玩家</b> → <b style="color:#7ef0b8">人机·简单</b> → ' +
           '<b style="color:#f0c95c">人机·普通</b> → <b style="color:#f2788e">人机·困难</b> → <b style="color:#d9b3f0">人机·噩梦</b>。<br>' +
-          '噩梦 = 困难 + 终局两步连击：收官更果断（实验档）。人机回合由 AI 自动操作。' +
+          '噩梦 = MCTS 模式（2/3 人局最强，实验档，需稍等思考）。人机回合由 AI 自动操作。' +
           '</div>' +
         '</div>' +
         '<div id="ai-foot"><button id="ai-start" type="button">开始游戏</button></div>' +
@@ -3248,7 +3252,8 @@ var AI = {
     }
     if (lv === 1) return AI.decideEasy(g, p, moves);
     if (lv === 2) return AI.decideNormal(g, p, moves);
-    if (lv === 4) return AI.decideHell(g, p, moves);
+    if (lv === 3) return AI.decideHell(g, p, moves);   // 困难：困难 + 终局两步连击（原噩梦逻辑）
+    if (lv === 4) return AI.mctsDecideMove(g, p);      // 噩梦：MCTS 模式
     return AI.decideHard(g, p, moves);
   },
   // 拿 3 色候选：按需求度排序取前 max3 种（简单级需求含噪声，无强目标性）
@@ -3703,7 +3708,7 @@ var AI = {
     }
     return bestSafe || bestBig || null;
   },
-  // 噩梦决策：困难 + 终局两步连击（score≥11 时优先"买A→买B上15"的组合）
+  // 困难决策：困难 + 终局两步连击（score≥11 时优先"买A→买B上15"的组合；原噩梦档逻辑）
   decideHell: function (g, p, moves) {
     if (p.score >= 12) {                        // 终局安全触发优先于连击
       var safeBuy = AI.safeEndgameBuy(g, p, moves);
@@ -3714,6 +3719,234 @@ var AI = {
       if (combo) return combo;
     }
     return AI.decideHard(g, p, moves);
+  },
+  // ===== 噩梦（lv4）：MCTS 模式（实验档，2/3 人局最强，多人局与困难同级）=====
+  // 全部合法动作（含 skip 兜底，与游戏「跳过 ⏭」一致）
+  movesAll: function (g, p) {
+    var moves = [], t, col;
+    for (t = 1; t <= 3; t++) for (col = 0; col < 4; col++) {
+      var card = tableCards(g, t, col);
+      if (card && canAfford(p, card)) moves.push({ type: 'buy', card: card, fromReserved: false, tier: t, col: col });
+    }
+    p.reserved.forEach(function (rc) {
+      if (canAfford(p, rc.card)) moves.push({ type: 'buy', card: rc.card, fromReserved: true, tier: rc.card.tier, col: -1 });
+    });
+    COLORS.forEach(function (c) {
+      if (g.bank[c] >= 4 && p.gems[c] + 2 <= 10) moves.push({ type: 'take2', col: c });
+    });
+    var room = 10 - playerGemTotal(p);
+    var avail = COLORS.filter(function (c) { return g.bank[c] > 0 && p.gems[c] < 10; });
+    var max3 = Math.max(0, Math.min(3, avail.length, room));
+    for (var k = 1; k <= max3; k++) {
+      var combos = [];
+      (function rec(start, chosen) {
+        if (chosen.length === k) { combos.push(chosen.slice()); return; }
+        for (var i = start; i < avail.length; i++) { chosen.push(avail[i]); rec(i + 1, chosen); chosen.pop(); }
+      })(0, []);
+      combos.forEach(function (cols) { moves.push({ type: 'take3', cols: cols }); });
+    }
+    if (g.gold > 0 && p.reserved.length < 3 && room >= 1) {
+      for (t = 1; t <= 3; t++) {
+        if (g.draw[t].length) moves.push({ type: 'reserve', tier: t, col: 0, fromDraw: true, card: null });
+        for (col = 0; col < 4; col++) {
+          var c2 = tableCards(g, t, col);
+          if (c2) moves.push({ type: 'reserve', tier: t, col: col, fromDraw: false, card: c2 });
+        }
+      }
+    }
+    if (!moves.length) moves.push({ type: 'skip' });
+    return moves;
+  },
+  // 动作启发式（渐进加宽用）：买高分/便宜/被抢牌优先，保留次之，拿色再次，跳过最差
+  moveHeuristic: function (g, p, move) {
+    if (move.type === 'buy') {
+      var effCost = 0, i, b = 0, a = 0;
+      for (i = 0; i < 5; i++) effCost += Math.max(0, move.card.cost[i] - p.cards[COLORS[i]]);
+      g.nobles.forEach(function (n) {
+        if (n.taken) return;
+        for (i = 0; i < 5; i++) {
+          var have = p.cards[COLORS[i]];
+          b += Math.min(n.req[i], have);
+          a += Math.min(n.req[i], have + (move.card.provide === COLORS[i] ? 1 : 0));
+        }
+      });
+      var contested = 0;
+      g.players.forEach(function (op) {
+        if (op !== p && canAfford(op, move.card)) contested += 2.5;   // 对手也买得起 → 抢牌价值
+      });
+      return move.card.points * 4 + (a - b) * 2 - effCost * 0.5 + contested;
+    }
+    if (move.type === 'reserve') return (move.card ? move.card.points : 0) * 2 + 1;
+    if (move.type === 'skip') return -100;
+    return 0.5;
+  },
+  // 生成动作并渐进加宽（cap>0 时只保留启发式前 cap 个）
+  mctsUntried: function (g, p, cap) {
+    var ms = AI.movesAll(g, p);
+    if (cap && ms.length > cap) {
+      ms = ms.slice().sort(function (a, b) { return AI.moveHeuristic(g, p, b) - AI.moveHeuristic(g, p, a); }).slice(0, cap);
+    }
+    return ms;
+  },
+  // 原地执行动作并结算回合（含贵族授予/终局推进）
+  execMove: function (g, p, move) {
+    if (move.type === 'buy') execBuy(g, p, move.card, !!move.fromReserved);
+    else if (move.type === 'take2') execTakeTwo(g, p, move.col);
+    else if (move.type === 'take3') execTakeThree(g, p, move.cols);
+    else if (move.type === 'reserve') execReserve(g, p, move.tier, move.col, !!move.fromDraw);
+    else if (move.type === 'skip') { /* 跳过 */ }
+    endTurn(g);
+    if (g.phase === 'noble-choice') {
+      awardNoble(g, p, g.nobleChoices[0]);
+      finishTurnCore(g);
+    }
+  },
+  // 终局判定：每位玩家的结果（唯一胜=1 / 并列=0.5 / 输=0）
+  mctsOutcomes: function (g) {
+    var outs = [], pi;
+    for (pi = 0; pi < g.nPlayers; pi++) {
+      if (!g.winner || !g.winner.length) outs.push(0);
+      else if (g.winner.indexOf(pi) >= 0) outs.push(g.winner.length > 1 ? 0.5 : 1);
+      else outs.push(0);
+    }
+    return outs;
+  },
+  // 深度上限的份额估值（分×1.2 + 矿卡×0.5 + 贵族×0.3 + 黄金×0.2）
+  mctsShares: function (g) {
+    var evals = [], total = 0;
+    g.players.forEach(function (p) {
+      var cardsN = 0, i, nobleP = 0;
+      for (i = 0; i < 5; i++) cardsN += p.cards[COLORS[i]];
+      g.nobles.forEach(function (n) {
+        if (n.taken) return;
+        for (i = 0; i < 5; i++) nobleP += Math.min(n.req[i], p.cards[COLORS[i]]);
+      });
+      var ev = p.score * 1.2 + cardsN * 0.5 + nobleP * 0.3 + p.gold * 0.2;
+      evals.push(ev);
+      total += ev;
+    });
+    return evals.map(function (e) { return total > 0 ? e / total : 1 / g.players.length; });
+  },
+  // rollout：随机动作
+  mctsRandomMove: function (g, p) {
+    var ms = AI.movesAll(g, p);
+    return ms.length ? ms[Math.floor(Math.random() * ms.length)] : null;
+  },
+  // rollout：轻量贪心（引擎优先买牌，否则按可见牌缺口拿宝石）
+  mctsLightMove: function (g, p) {
+    var bestBuy = null, bestBuyS = -Infinity, t, col, i;
+    var considerBuy = function (card, fromReserved, tier, col2) {
+      if (!card || !canAfford(p, card)) return;
+      var eff = 0;
+      for (i = 0; i < 5; i++) eff += Math.max(0, card.cost[i] - p.cards[COLORS[i]]);
+      var b2 = 0, a2 = 0;
+      g.nobles.forEach(function (n) {
+        if (n.taken) return;
+        for (i = 0; i < 5; i++) {
+          var have = p.cards[COLORS[i]];
+          b2 += Math.min(n.req[i], have);
+          a2 += Math.min(n.req[i], have + (card.provide === COLORS[i] ? 1 : 0));
+        }
+      });
+      var s = card.points * 6 + (a2 - b2) * 2 - eff * 0.5;
+      if (s > bestBuyS) { bestBuyS = s; bestBuy = { type: 'buy', card: card, fromReserved: fromReserved, tier: tier, col: col2 }; }
+    };
+    for (t = 1; t <= 3; t++) for (col = 0; col < 4; col++) considerBuy(tableCards(g, t, col), false, t, col);
+    p.reserved.forEach(function (rc) { considerBuy(rc.card, true, rc.card.tier, -1); });
+    if (bestBuy) return bestBuy;
+    var need = { W: 0, B: 0, G: 0, R: 0, K: 0 };
+    for (t = 1; t <= 3; t++) for (col = 0; col < 4; col++) {
+      var card = tableCards(g, t, col);
+      if (!card) continue;
+      for (i = 0; i < 5; i++) need[COLORS[i]] += Math.max(0, card.cost[i] - p.cards[COLORS[i]]);
+    }
+    var room = 10 - playerGemTotal(p);
+    var avail = COLORS.filter(function (c) { return g.bank[c] > 0 && p.gems[c] < 10; });
+    avail.sort(function (a, b) { return need[b] - need[a]; });
+    var k = Math.min(room, avail.length);
+    if (k >= 1) return { type: 'take3', cols: avail.slice(0, k) };
+    for (i = 0; i < 5; i++) if (g.bank[COLORS[i]] >= 4 && p.gems[COLORS[i]] + 2 <= 10) return { type: 'take2', col: COLORS[i] };
+    if (g.gold > 0 && p.reserved.length < 3 && room >= 1) {
+      for (t = 1; t <= 3; t++) for (col = 0; col < 4; col++) {
+        var c3 = tableCards(g, t, col);
+        if (c3) return { type: 'reserve', tier: t, col: col, fromDraw: false, card: c3 };
+      }
+    }
+    return { type: 'skip' };
+  },
+  // rollout：从给定状态模拟（不修改入参；depthCap>0 到上限改用份额估值）
+  mctsRollout: function (g0, rootPlayer, policy, depthCap) {
+    var cg = AI.cloneState(g0);
+    var guard = 0;
+    while (!cg.over && guard++ < 500) {
+      if (depthCap && guard >= depthCap) break;
+      var p = cg.players[cg.current];
+      var move = policy === 'light' ? AI.mctsLightMove(cg, p) : AI.mctsRandomMove(cg, p);
+      if (!move) break;
+      AI.execMove(cg, p, move);
+    }
+    if (cg.over) return AI.mctsOutcomes(cg);
+    return AI.mctsShares(cg);
+  },
+  // 克隆并执行动作，返回新状态（不修改入参）
+  mctsApply: function (g, move) {
+    var cg = AI.cloneState(g);
+    var p = cg.players[g.current];
+    AI.execMove(cg, p, move);
+    return { g: cg, current: cg.current };
+  },
+  // MCTS 决策（max^n 多人局 + 渐进加宽 + 深度上限）
+  mctsDecide: function (g, p, opts) {
+    var rootPlayer = g.players.indexOf(p);
+    var C = opts.c || 1.4;
+    var maxIters = opts.iterations || 1200;
+    var deadline = Date.now() + (opts.timeMs || 300);
+    var nP = g.nPlayers;
+    var mkRes = function () { var a = new Array(nP); for (var i = 0; i < nP; i++) a[i] = 0; return a; };
+    var backprop = function (node, outs) {
+      while (node) {
+        node.visits++;
+        for (var pi = 0; pi < nP; pi++) node.res[pi] += outs[pi];
+        node = node.parent;
+      }
+    };
+    var root = { g: g, player: rootPlayer, visits: 0, res: mkRes(), children: [], untried: AI.mctsUntried(g, p, opts.children || 0), action: null, parent: null };
+    var iters = 0;
+    while (iters < maxIters && Date.now() < deadline) {
+      var node = root;
+      while (node.untried.length === 0 && node.children.length > 0 && !node.g.over) {
+        var best = null, bestU = -Infinity, pl = node.player, ci;
+        for (ci = 0; ci < node.children.length; ci++) {
+          var ch = node.children[ci];
+          var u = ch.res[pl] / ch.visits + C * Math.sqrt(Math.log(node.visits) / ch.visits);
+          if (u > bestU) { bestU = u; best = ch; }
+        }
+        node = best;
+      }
+      if (node.g.over) { backprop(node, AI.mctsOutcomes(node.g)); iters++; continue; }
+      var child = null;
+      if (node.untried.length > 0) {
+        var move = node.untried.pop();
+        var next = AI.mctsApply(node.g, move);
+        child = { g: next.g, player: next.current, visits: 0, res: mkRes(), children: [], untried: AI.mctsUntried(next.g, next.g.players[next.current], opts.children || 0), action: move, parent: node };
+        node.children.push(child);
+      }
+      var simState = child || node;
+      var outs = simState.g.over ? AI.mctsOutcomes(simState.g) : AI.mctsRollout(simState.g, rootPlayer, opts.policy || 'random', opts.depth || 0);
+      backprop(child || node, outs);
+      iters++;
+    }
+    var bestChild = null, bestVisits = -1, i2;
+    for (i2 = 0; i2 < root.children.length; i2++) {
+      if (root.children[i2].visits > bestVisits) { bestVisits = root.children[i2].visits; bestChild = root.children[i2]; }
+    }
+    return { move: bestChild ? bestChild.action : null, stats: { iters: iters, children: root.children.length } };
+  },
+  // 噩梦入口：MCTS 决策 → 游戏可执行动作（skip → null，由外层跳过）
+  mctsDecideMove: function (g, p) {
+    var r = AI.mctsDecide(g, p, { iterations: 2500, timeMs: 700, depth: 40, children: 15, policy: 'light' });
+    if (r.move && r.move.type === 'skip') return null;
+    return r.move;
   },
 };
 

@@ -82,9 +82,13 @@ OneTab_Tabletop/
 │   └── glory_&_gems.html       # 《荣光宝石商》单文件成品
 ├── docs/                       # 设计文档
 │   ├── glory_&_gems/           # 《荣光宝石商》概念设计与规则说明
-│   │   └── conceptual design.md
+│   │   ├── conceptual design.md
+│   │   ├── advanced_strategy.md        # 进阶对弈策略（含四档难度说明）
+│   │   └── ai_lookahead_design.md      # AI 前瞻设计文档（含 MCTS 原型记录）
 │   └── spirit_stone_clash/     # 《灵石争锋》概念设计
 │       └── conceptual design.md
+├── dev/                        # 开发工具与实验原型
+│   └── mcts_splendor.js        # MCTS 独立原型（Node 脚本，复用主游戏规则引擎）
 ├── LICENSE                     # MIT License
 └── README.md
 ```
@@ -98,7 +102,14 @@ OneTab_Tabletop/
 已收录的设计文档：
 
 - `docs/glory_&_gems/conceptual design.md` — 《荣光宝石商》
+- `docs/glory_&_gems/advanced_strategy.md` — 进阶对弈策略（含四档难度说明）
+- `docs/glory_&_gems/ai_lookahead_design.md` — AI 前瞻设计文档（贪心调优 / 1步前瞻 / MCTS 原型的完整实验记录）
 - `docs/spirit_stone_clash/conceptual design.md` — 《灵石争锋》
+
+### 实验原型（不阻塞主游戏）
+
+- `dev/mcts_splendor.js` — MCTS 独立原型，复用主游戏规则引擎：
+  `node dev/mcts_splendor.js --games 10 --iter 800 --time 400 --opponent hard --policy hard`
 
 ---
 

@@ -5,7 +5,7 @@ node_modules
 .idea/
 .vscode/
 .vs/
-
+dev/
 # ai agent
 
 .reasonix
