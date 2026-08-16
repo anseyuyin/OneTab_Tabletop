@@ -124,6 +124,8 @@
   .ai-dir-btn.normal .d { color: #f3dd9a; }
   .ai-dir-btn.hard { background: #7a3140; border-color: #e0566e; color: #ffeef1; box-shadow: 0 0 10px rgba(224,86,110,0.35); }
   .ai-dir-btn.hard .d { color: #f6b7c2; }
+.ai-dir-btn.hell { background: #3a1d3f; border-color: #b26ae0; color: #f6eaff; box-shadow: 0 0 12px rgba(178,106,224,0.5); }
+.ai-dir-btn.hell .d { color: #d9b3f0; }
   .ai-dir-btn.disabled { opacity: 0.3; cursor: not-allowed; filter: grayscale(0.6); }
   .ai-dir-btn:active:not(.disabled) { filter: brightness(1.25); }
   #ai-foot { flex-shrink: 0; padding: 12px 16px 16px; text-align: center; border-top: 1px solid rgba(61,79,117,.6); }
@@ -234,6 +236,9 @@
  * ============================================================ */
 
 'use strict';
+
+// 游戏版本（首页右下角显示）
+const GAME_VERSION = 'v 1.0.1';
 
 // ============================================================
 // 统一资源颜色规范（全游戏唯一配色来源，6 种资源）
@@ -1426,8 +1431,20 @@ function mkTextMesh(str, x, y, size, color, opts) {
   return mkMesh(tex, (str.length * size + size) * 1.1, size * 1.6, x, y, opts && opts.z || 3);
 }
 function updateTextMesh(mesh, str, x, y, size, color, opts) {
-  var tex = makeTex('txt' + str + (opts && opts.key || '') + (opts && opts.color || ''), (str.length * size + size) * 1.1, size * 1.6, function (ctx, W, H) {
-    text(ctx, str, W / 2, H / 2 + 1, size, color || '#ffffff', 'center', opts && opts.bold !== false, opts && opts.stroke);
+  var runs = opts && opts.runs;
+  var tex = makeTex('txt' + str + (opts && opts.key || '') + (opts && opts.color || '') + (runs ? '|' + runs.map(function (r) { return r.text + ':' + r.color; }).join('|') : ''), (str.length * size + size) * 1.1, size * 1.6, function (ctx, W, H) {
+    if (runs && runs.length > 1) {
+      // 多色分段：按 runs 顺序拼接绘制（近似每字符宽 = size）
+      var totalW = 0, i;
+      for (i = 0; i < runs.length; i++) totalW += runs[i].text.length * size;
+      var x0 = W / 2 - totalW / 2;
+      for (i = 0; i < runs.length; i++) {
+        text(ctx, runs[i].text, x0 + (runs[i].text.length * size) / 2, H / 2 + 1, size, runs[i].color || color || '#ffffff', 'center', opts && opts.bold !== false, opts && opts.stroke);
+        x0 += runs[i].text.length * size;
+      }
+    } else {
+      text(ctx, str, W / 2, H / 2 + 1, size, color || '#ffffff', 'center', opts && opts.bold !== false, opts && opts.stroke);
+    }
   });
   mesh.material.map = tex;
   mesh.material.needsUpdate = true;
@@ -2207,6 +2224,12 @@ var Home = {
     var tagH = tagSize * 1.6;
     mkMesh(homeTagTex(tagStr, tagW, tagH, tagSize), tagW, tagH, 0, H / 2 - H * 0.35, 2);
 
+    // ===== 版本号（首页右下角，低调不抢视觉） =====
+    var verStr = GAME_VERSION;
+    var verSize = Math.min(11, W * 0.026);
+    var verW = (verStr.length * verSize + verSize) * 1.1;
+    mkTextMesh(verStr, W / 2 - 10 - verW / 2, -H / 2 + 12, verSize, 'rgba(230,238,252,0.55)', { key: 'ver', bold: false });
+
     // ===== 氛围光斑（呼吸动画，由 animate 驱动；位于背景之上、按钮之下） =====
     Home.fx = { spots: [] };
     [
@@ -2981,12 +3004,13 @@ var AI_POS_CSS = {
   left: 'left:10px;top:50%;transform:translateY(-50%)',
   right: 'right:10px;top:50%;transform:translateY(-50%)',
 };
-// 操作员类型：0 玩家 / 1 人机·简单 / 2 人机·普通 / 3 人机·困难
+// 操作员类型：0 玩家 / 1 人机·简单 / 2 人机·普通 / 3 人机·困难 / 4 人机·噩梦
 var AI_LEVELS = [
-  { v: 0, label: '玩家', cls: '' },
-  { v: 1, label: '简单', cls: 'simple' },
-  { v: 2, label: '普通', cls: 'normal' },
-  { v: 3, label: '困难', cls: 'hard' },
+  { v: 0, label: '玩家', cls: '', hex: '#dfe8f8' },
+  { v: 1, label: '简单', cls: 'simple', hex: '#7ef0b8' },
+  { v: 2, label: '普通', cls: 'normal', hex: '#f0c95c' },
+  { v: 3, label: '困难', cls: 'hard', hex: '#f2788e' },
+  { v: 4, label: '噩梦', cls: 'hell', hex: '#d9b3f0' },
 ];
 // 方位 → 玩家索引（与 panelForPlayer 的席位映射一致）
 function aiPlayerAt(n, dirKey) {
@@ -3030,7 +3054,7 @@ var AISetupModal = {
   },
   cycle: function (d) {
     if (this.slots[d] === undefined) return;   // 未启用方位不响应
-    this.slots[d] = (this.slots[d] + 1) % 4;
+    this.slots[d] = (this.slots[d] + 1) % 5;
     playSfx('tap');
     this._paint();
   },
@@ -3081,7 +3105,8 @@ var AISetupModal = {
           '<div class="ai-sec"><div class="ai-dir-grid">' + dirBtns + '</div></div>' +
           '<div class="ai-sec" style="font-size:12px;color:rgba(223,232,248,.72);line-height:1.8;text-align:center">' +
           '点击方位按钮循环切换：<b style="color:#dfe8f8">玩家</b> → <b style="color:#7ef0b8">人机·简单</b> → ' +
-          '<b style="color:#f0c95c">人机·普通</b> → <b style="color:#f2788e">人机·困难</b>。<br>人机玩家的回合将由 AI 自动操作，玩家面板左下角会显示机器人图标。' +
+          '<b style="color:#f0c95c">人机·普通</b> → <b style="color:#f2788e">人机·困难</b> → <b style="color:#d9b3f0">人机·噩梦</b>。<br>' +
+          '噩梦 = 困难 + 终局两步连击：收官更果断（实验档）。人机回合由 AI 自动操作。' +
           '</div>' +
         '</div>' +
         '<div id="ai-foot"><button id="ai-start" type="button">开始游戏</button></div>' +
@@ -3090,7 +3115,7 @@ var AISetupModal = {
 };
 
 // ============================================================
-// 人机 AI：三级难度差异化决策 + 回合自动执行（复用飞行动画）
+// 人机 AI：四级难度差异化决策 + 回合自动执行（复用飞行动画）
 // ============================================================
 var AI = {
   running: false,        // AI 正在思考/执行中（防止重复触发）
@@ -3223,6 +3248,7 @@ var AI = {
     }
     if (lv === 1) return AI.decideEasy(g, p, moves);
     if (lv === 2) return AI.decideNormal(g, p, moves);
+    if (lv === 4) return AI.decideHell(g, p, moves);
     return AI.decideHard(g, p, moves);
   },
   // 拿 3 色候选：按需求度排序取前 max3 种（简单级需求含噪声，无强目标性）
@@ -3286,12 +3312,30 @@ var AI = {
       var gapAll = 0;
       for (var i = 0; i < 5; i++) gapAll += Math.max(0, n.req[i] - p.cards[COLORS[i]]);
       if (gapAll <= (lv >= 3 ? 5 : 3)) {       // 只关注接近达成的贵族
+        var race = 1;                          // 贵族争抢：对手近达成 → 抢跑；落后太多 → 换线
+        if (lv >= 3) {
+          var oppMin = 99;
+          g.players.forEach(function (op) {
+            if (op === p) return;
+            var og = 0;
+            for (var k = 0; k < 5; k++) og += Math.max(0, n.req[k] - op.cards[COLORS[k]]);
+            if (og < oppMin) oppMin = og;
+          });
+          if (oppMin <= 2) {                            // 对手差 2 张内：差距可追 → 抢跑，差距大 → 止损
+            race = (gapAll <= oppMin + 2) ? 2 : 0.4;
+          } else if (gapAll >= oppMin + 3) {            // 明显落后 → 降权止损换线
+            race = 0.4;
+          }
+        }
         for (var j = 0; j < 5; j++) {
           var cc = COLORS[j];
-          needs[cc] += Math.max(0, n.req[j] - p.cards[cc]) * (lv >= 3 ? 1.5 : 1);
+          needs[cc] += Math.max(0, n.req[j] - p.cards[cc]) * (lv >= 3 ? 1.5 : 1) * race;
         }
       }
     });
+    if (lv === 2) {   // 普通难度：拿宝石带噪声（更易失误，拉大难度阶梯）
+      COLORS.forEach(function (c) { needs[c] += Math.random() * 0.5; });
+    }
     return needs;
   },
   // 颜色协同价值：多一个 color 色折扣，对愿望清单与贵族的潜在推进
@@ -3312,10 +3356,11 @@ var AI = {
     var s = card.points * 6 + AI.nobleProgress(p, card) * 3 - AI.effectiveCost(p, card) * 0.5;
     if (m.fromReserved) s += 2;                       // 已保留的牌优先变现
     if (lv >= 3) {
-      s += AI.urgency(g, p, card);                    // 对手即将买得起 → 抢先
+      s += AI.urgency(g, p, card);                    // 对手即将买得起 → 抢先（领先者/下家权重更高）
       s += AI.synergy(g, p, card.provide) * 0.8;      // 颜色折扣的未来价值
       if (p.score >= 12) s += card.points * 6;        // 冲刺期：分数权重最高
       else if (p.score >= 9) s += card.points * 3;    // 中局提前提分
+      if (p.score >= 12 && card.points === 0) s -= 1.5;   // 平局意识：同分比矿卡少，终局少买 0 分杂牌
     }
     return s;
   },
@@ -3346,32 +3391,93 @@ var AI = {
     if (net <= 0) return 0;
     return Math.ceil(net / 2.5);
   },
-  // 对手对该牌的购买威胁（困难级：按对手还需几步买得起精确计分）
+  // 对手对该牌的购买威胁（困难级：按对手还需几步买得起精确计分；领先者/下家权重更高）
   urgency: function (g, p, card) {
     var u = 0;
+    var leader = AI.leaderThreat(g, p);
     g.players.forEach(function (op) {
       if (op === p) return;   // 所有对手都计入威胁（含其他人机）
       var steps = AI.stepsToAfford(op, card);
-      if (steps <= 1) u += 5;         // 对手下回合即可抢走
-      else if (steps <= 2) u += 3;    // 两回合内
-      else if (steps <= 3) u += 1;
+      var w = 1;
+      if (leader && op === leader.op) w = 2.2;          // 盯领先者：他快买的牌优先抢/锁
+      else if (AI.isNextPlayer(g, p, op)) w = 1.6;      // 卡下家：下家快买的牌优先处理
+      if (steps <= 1) u += 5 * w;         // 对手下回合即可抢走
+      else if (steps <= 2) u += 3 * w;    // 两回合内
+      else if (steps <= 3) u += 1 * w;
     });
     return u;
   },
+  // ===== 进阶策略辅助：卡下家 / 盯领先者 / 抢银行 / 终局黄金 =====
+  // 下一位行动者（座位顺序即 g.players 下标 +1）
+  nextPlayer: function (g, p) {
+    var i = g.players.indexOf(p);
+    return g.players[(i + 1) % g.players.length];
+  },
+  isNextPlayer: function (g, p, op) {
+    return AI.nextPlayer(g, p) === op;
+  },
+  // 领先者评估：分高 + 引擎深（矿卡多）+ 近贵族 + 压着高分保留牌
+  leaderThreat: function (g, p) {
+    var best = null, bestS = 0;
+    g.players.forEach(function (op) {
+      if (op === p) return;
+      var s = op.score * 2;
+      for (var i = 0; i < 5; i++) s += (op.cards[COLORS[i]] || 0) * 0.8;
+      g.nobles.forEach(function (n) {
+        if (n.taken) return;
+        var gap = 0;
+        for (var j = 0; j < 5; j++) gap += Math.max(0, n.req[j] - (op.cards[COLORS[j]] || 0));
+        if (gap > 0 && gap <= 4) s += 3;   // 距贵族 4 张内 → 随时起飞
+      });
+      op.reserved.forEach(function (rc) { if (rc.card.points >= 3) s += rc.card.points * 0.6; });
+      if (s > bestS) { bestS = s; best = op; }
+    });
+    return best ? { op: best, score: bestS } : null;
+  },
+  // 卡下家资源：拿走某色对下家的伤害值（2 人局最强、3 人局次之、4 人局≈0）
+  denyValue: function (g, p, color) {
+    var n = g.players.length;
+    var w = n === 2 ? 2.4 : (n === 3 ? 1.2 : 0.15);
+    if (w <= 0.01) return 0;
+    var next = AI.nextPlayer(g, p);
+    if (!next || next === p) return 0;
+    var eng = 0;
+    for (var i2 = 0; i2 < 5; i2++) eng += p.cards[COLORS[i2]];
+    if (eng < 2) return 0;   // 引擎未成型（<2张矿卡）不卡人，先建引擎
+    var d = 0, i;
+    AI.wishList(g, next, 3, 3).forEach(function (it) {
+      var gap = 0, gapCol = 0;
+      for (i = 0; i < 5; i++) {
+        var c = COLORS[i];
+        var need = Math.max(0, it.card.cost[i] - next.cards[c] - next.gems[c]);
+        gap += need;
+        if (c === color) gapCol = need;
+      }
+      if (gapCol > 0 && gap > 0) d += (gapCol / gap) * (it.w > 0 ? 1.5 : 0.5);
+    });
+    if (AI.colorNeeds(g, next, 3)[color] > 0.5) d += 0.8;   // 下家正缺这色
+    if (g.bank[color] <= (n === 2 ? 3 : 4)) d += 0.6;       // 银行越少，拿走越痛
+    return d * w;
+  },
+  // 银行告急：该色所剩越少越值得提前抢（自己用 + 让对手没得拿）
+  scarcity: function (g, color) {
+    var n = g.players.length;
+    return g.bank[color] <= (n === 2 ? 2 : n === 3 ? 3 : 5) ? 0.8 : 0;
+  },
   // 简单：能买大概率买（前 2 名中随机），拿色带噪声的弱目标性，偶发随机保留
   decideEasy: function (g, p, moves) {
-    if (moves.buy.length && Math.random() < 0.85) {
+    if (moves.buy.length && Math.random() < 0.7) {   // 简单难度：更常错过买牌机会
       moves.buy.sort(function (a, b) {
         return (b.card.points * 3 - AI.effectiveCost(p, b.card)) - (a.card.points * 3 - AI.effectiveCost(p, a.card));
       });
       return moves.buy[Math.floor(Math.random() * Math.min(2, moves.buy.length))];
     }
-    if (moves.take3.length && Math.random() < 0.75) return moves.take3[0];
+    if (moves.take3.length && Math.random() < 0.6) return moves.take3[0];
     if (moves.take2.length) {
       var needs = AI.colorNeeds(g, p, 1);
       var best2 = moves.take2[0], bestN = -1e9;
       moves.take2.forEach(function (m) {
-        var n = needs[m.col] + Math.random() * 1.5;
+        var n = needs[m.col] + Math.random() * 2.5;   // 简单难度：拿色更随性
         if (n > bestN) { bestN = n; best2 = m; }
       });
       return best2;
@@ -3391,12 +3497,13 @@ var AI = {
         var sb = AI.buyScore(g, p, moves.buy[i], 2);
         if (sb > bestS) { bestS = sb; best = moves.buy[i]; }
       }
-      // 值得买（有分或够便宜攒折扣）才出手，否则继续攒宝石
-      if (best.card.points >= 1 || AI.effectiveCost(p, best.card) <= 4) return best;
+      // 值得买（有分或够便宜攒折扣）才出手，否则继续攒宝石；
+      // 普通难度：6% 概率犹豫不买（拉大与困难的差距）
+      if ((best.card.points >= 1 || AI.effectiveCost(p, best.card) <= 4) && Math.random() >= 0.06) return best;
     }
     var needs = AI.colorNeeds(g, p, 2);
     if (moves.take2.length) {
-      best = null; bestS = 1.5;   // 单色需求够强才拿 2 个（效率优先）
+      best = null; bestS = 1.7;   // 单色需求够强才拿 2 个（普通难度阈值略高）
       for (i = 0; i < moves.take2.length; i++) {
         if (needs[moves.take2[i].col] > bestS) { bestS = needs[moves.take2[i].col]; best = moves.take2[i]; }
       }
@@ -3422,26 +3529,42 @@ var AI = {
     var best = null, bestS = -1e9, i;
     var needs = AI.colorNeeds(g, p, 3);
     var wlTop = AI.wishList(g, p, 3, 1)[0];   // 榜首目标牌（前瞻锚点）
+    // 终局安全触发：能触发且安全就触发，不安全则买最大分拉开差距
+    if (p.score >= 12) {
+      var safeBuy = AI.safeEndgameBuy(g, p, moves);
+      if (safeBuy) return safeBuy;
+    }
+    // 引擎优先：有"明显值得买"的牌就买（有分 或 有效成本≤4，与普通同口径），避免囤宝石拖慢引擎
+    var goodBuy = null, goodS = -1e9;
+    for (i = 0; i < moves.buy.length; i++) {
+      var mb = moves.buy[i];
+      if (mb.card.points >= 1 || AI.effectiveCost(p, mb.card) <= 4) {
+        var sb0 = AI.buyScore(g, p, mb, 3);
+        if (sb0 > goodS) { goodS = sb0; goodBuy = mb; }
+      }
+    }
+    if (goodBuy) return goodBuy;
     // 购买：直接收益最高
     for (i = 0; i < moves.buy.length; i++) {
       var sb = AI.buyScore(g, p, moves.buy[i], 3);
       if (sb > bestS) { bestS = sb; best = moves.buy[i]; }
     }
-    // 拿 2 个同色：缺口双倍进展；该色若是榜首目标牌的缺口色，额外加分（提前买下目标）
+    // 拿 2 个同色：缺口双倍进展；该色若是榜首目标牌的缺口色，额外加分（提前买下目标）；
+    // 进阶：拿走下家正缺的色（卡下家资源，2/3 人局有效）、银行告急色提前抢
     for (i = 0; i < moves.take2.length; i++) {
       var col2 = moves.take2[i].col;
       var n2 = needs[col2];
-      var s2 = n2 * 2.2 + (n2 >= 2 ? 1.5 : 0);
+      var s2 = n2 * 2.2 + (n2 >= 2 ? 1.5 : 0) + AI.denyValue(g, p, col2) * 0.8 + AI.scarcity(g, col2) * 0.5;
       if (wlTop) {
         var di2 = Math.max(0, wlTop.card.cost[COLORS.indexOf(col2)] - p.cards[col2] - p.gems[col2]);
         if (di2 > 0) s2 += Math.min(2, di2) * 1.5;
       }
       if (s2 > bestS) { bestS = s2; best = moves.take2[i]; }
     }
-    // 拿 3 色：各色需求总和 + 榜首目标牌缺口色加权
+    // 拿 3 色：各色需求总和 + 榜首目标牌缺口色加权 + 卡下家/抢银行
     for (i = 0; i < moves.take3.length; i++) {
       var s3 = 0;
-      moves.take3[i].cols.forEach(function (c) { s3 += needs[c]; });
+      moves.take3[i].cols.forEach(function (c) { s3 += needs[c] + AI.denyValue(g, p, c) * 0.6 + AI.scarcity(g, c) * 0.5; });
       if (wlTop) {
         moves.take3[i].cols.forEach(function (c) {
           var di3 = Math.max(0, wlTop.card.cost[COLORS.indexOf(c)] - p.cards[c] - p.gems[c]);
@@ -3450,17 +3573,151 @@ var AI = {
       }
       if (s3 > bestS) { bestS = s3; best = moves.take3[i]; }
     }
-    // 保留：锁定高分牌 / 对手即将抢的牌（卡对手），+1 黄金
+    // 保留：锁定高分牌 / 对手即将抢的牌（卡对手，领先者权重更高），+1 黄金
     for (i = 0; i < moves.reserve.length; i++) {
       var r = moves.reserve[i];
       var s4 = r.card.points * 3.5 + AI.nobleProgress(p, r.card) * 2 + AI.urgency(g, p, r.card) * 1.2 - AI.effectiveCost(p, r.card) * 0.3 + 1;
+      if (p.score >= 12 && r.card.points >= 3) s4 += 2.5;   // 终局黄金预存：锁高分牌的同时白拿黄金
       if (s4 > bestS) { bestS = s4; best = r; }
     }
     return best;
   },
+  // ===== 噩梦（lv4）：困难 + 终局两步连击（实验档）=====
+  // 克隆整局状态（牌对象共享只读引用；玩家、宝石、贵族、保留深拷贝）
+  cloneState: function (g) {
+    var cg = {
+      nPlayers: g.nPlayers, cfg: g.cfg, gold: g.gold,
+      bank: {}, decks: { 1: [[], [], [], []], 2: [[], [], [], []], 3: [[], [], [], []] },
+      draw: { 1: [], 2: [], 3: [] }, nobles: [], players: [],
+      current: g.current, firstPlayer: g.firstPlayer, turnCount: g.turnCount,
+      phase: g.phase, nobleChoices: g.nobleChoices.slice(), endTriggered: g.endTriggered,
+      winner: g.winner, over: g.over, log: [], startedAt: g.startedAt
+    };
+    var c, t, col, j, k;
+    for (c in g.bank) cg.bank[c] = g.bank[c];
+    for (t = 1; t <= 3; t++) {
+      cg.draw[t] = g.draw[t].slice();
+      for (col = 0; col < 4; col++) cg.decks[t][col] = g.decks[t][col].slice();
+    }
+    g.nobles.forEach(function (n) {
+      cg.nobles.push({ req: n.req.slice(), uid: n.uid, taken: n.taken, by: n.by });
+    });
+    g.players.forEach(function (p) {
+      var gems = {}, cards = {};
+      for (k in p.gems) gems[k] = p.gems[k];
+      for (k in p.cards) cards[k] = p.cards[k];
+      cg.players.push({
+        id: p.id, theme: p.theme, gems: gems, gold: p.gold, cards: cards,
+        reserved: p.reserved.map(function (rc) { return { card: rc.card, src: rc.src }; }),
+        nobles: p.nobles.slice(), score: p.score, isAI: p.isAI, aiLevel: p.aiLevel
+      });
+    });
+    return cg;
+  },
+  // 终局两步连击：score≥11 时搜索「买 A 后立刻买 B 上 15」的组合（噩梦特色）
+  endgameCombo: function (g, p, moves) {
+    var best = null, bestV = 0, i, t, col;
+    for (i = 0; i < moves.buy.length; i++) {
+      var A = moves.buy[i];
+      if (p.score + A.card.points >= 15) {          // 一步到 15 → 直接买
+        var sv = A.card.points * 10 + AI.nobleProgress(p, A.card) * 2;
+        if (sv > bestV) { bestV = sv; best = A; }
+        continue;
+      }
+      if (p.score + A.card.points < 11) continue;   // 还差太远，不找连击
+      var cg = AI.cloneState(g);
+      var cp = cg.players[g.players.indexOf(p)];
+      execBuy(cg, cp, A.card, !!A.fromReserved);
+      var check = function (B, isReserved) {
+        if (!B || !canAfford(cp, B)) return;
+        if (p.score + A.card.points + B.points < 15) return;
+        if (!isReserved) {   // 展示牌 B 可能被对手抢走 → 连击不成立
+          for (var oi = 0; oi < cg.players.length; oi++) {
+            var op = cg.players[oi];
+            if (op !== cp && canAfford(op, B)) return;
+          }
+        }
+        var sv2 = A.card.points * 4 + B.points * 6 + AI.nobleProgress(p, A.card) * 1.5;
+        if (sv2 > bestV) { bestV = sv2; best = A; }
+      };
+      for (t = 1; t <= 3; t++) for (col = 0; col < 4; col++) check(tableCards(cg, t, col), false);
+      cp.reserved.forEach(function (rc) { check(rc.card, true); });
+    }
+    return best;
+  },
+  // 精确模拟：对手下一轮（终局触发后的最后一轮）所有合法购买动作的最高可达总分。
+  // 一回合只有一次动作，只有「买牌」能得分（含买后凑齐贵族 +3），拿宝石/保留不得分，
+  // 因此枚举其能买得起的展示牌 + 保留牌即可得到精确最大值。
+  oppMaxNextTurn: function (g, op) {
+    var best = op.score, t, col, j;
+    var consider = function (card) {
+      if (!card || !canAfford(op, card)) return;
+      var s = op.score + card.points;
+      var nobleBonus = 0;
+      g.nobles.forEach(function (n) {
+        if (n.taken || nobleBonus) return;
+        var ok = true;
+        for (j = 0; j < 5; j++) {
+          var have = op.cards[COLORS[j]] + (card.provide === COLORS[j] ? 1 : 0);
+          if (have < n.req[j]) { ok = false; break; }
+        }
+        if (ok) nobleBonus = 3;   // 买这张牌真的凑齐贵族 → +3（多选一时只 +3 一次）
+      });
+      s += nobleBonus;
+      if (s > best) best = s;
+    };
+    for (t = 1; t <= 3; t++) for (col = 0; col < 4; col++) consider(tableCards(g, t, col));
+    op.reserved.forEach(function (rc) { consider(rc.card); });
+    return best;
+  },
+  // 终局安全触发：score≥12 且能触发时，精确模拟对手下一轮最高可达分；
+  // 有安全触发就触发（取触发后总分最高者），否则买最大分拉开差距，避免在 15 分被反超
+  safeEndgameBuy: function (g, p, moves) {
+    var i, t, col, i2, j;
+    var maxOp = 0;
+    g.players.forEach(function (op) {
+      if (op === p) return;
+      var opMax = AI.oppMaxNextTurn(g, op);   // 精确模拟：对手下一轮最高可达总分
+      if (opMax > maxOp) maxOp = opMax;
+    });
+    var bestSafe = null, bestSafeAfter = -1, bestBig = null, bestBigAfter = -1;
+    for (i = 0; i < moves.buy.length; i++) {
+      var m = moves.buy[i];
+      var total = p.score + m.card.points;
+      if (total < 15) continue;                 // 本次不触发终局，交给常规逻辑
+      var after = total;
+      g.nobles.forEach(function (n) {          // 买后若凑齐贵族 → 额外 +3
+        if (n.taken) return;
+        var ok = true;
+        for (j = 0; j < 5; j++) {
+          var have = p.cards[COLORS[j]] + (m.card.provide === COLORS[j] ? 1 : 0);
+          if (have < n.req[j]) { ok = false; break; }
+        }
+        if (ok) after += 3;
+      });
+      if (after >= maxOp) {                     // 安全触发：对手追不上
+        if (after > bestSafeAfter) { bestSafeAfter = after; bestSafe = m; }
+      } else if (after > bestBigAfter) {        // 不安全：买最大分拉开差距
+        bestBigAfter = after; bestBig = m;
+      }
+    }
+    return bestSafe || bestBig || null;
+  },
+  // 噩梦决策：困难 + 终局两步连击（score≥11 时优先"买A→买B上15"的组合）
+  decideHell: function (g, p, moves) {
+    if (p.score >= 12) {                        // 终局安全触发优先于连击
+      var safeBuy = AI.safeEndgameBuy(g, p, moves);
+      if (safeBuy) return safeBuy;
+    }
+    if (p.score >= 11) {
+      var combo = AI.endgameCombo(g, p, moves);
+      if (combo) return combo;
+    }
+    return AI.decideHard(g, p, moves);
+  },
 };
 
-// 按配置开局：n 人数 + slots 方位 → 操作员类型（0 玩家 / 1 简单 / 2 普通 / 3 困难）
+// 按配置开局：n 人数 + slots 方位 → 操作员类型（0 玩家 / 1 简单 / 2 普通 / 3 困难 / 4 噩梦）
 function startGameWithAI(n, slots) {
   var g = newGame(n);
   for (var k in slots) {
@@ -3915,10 +4172,16 @@ var GameScreen = {
     if (!g) return;
     var p = g.players[g.current];
 
-    var aiTag = p.isAI ? '（人机·' + (p.aiLevel === 3 ? '困难' : p.aiLevel === 2 ? '普通' : '简单') + '）' : '';
+    var aiLvInfo = p.isAI ? (AI_LEVELS[p.aiLevel] || AI_LEVELS[1]) : null;   // 难度信息（含颜色）
+    var aiTag = aiLvInfo ? '（人机·' + aiLvInfo.label + '）' : '';
     var txt = '玩家' + (g.current + 1) + ' · ' + p.theme.name + aiTag + ' 的回合';
+    var bannerRuns = aiLvInfo ? [
+      { text: '玩家' + (g.current + 1) + ' · ' + p.theme.name + '（人机·', color: '#f5d76e' },
+      { text: aiLvInfo.label, color: aiLvInfo.hex },
+      { text: '） 的回合', color: '#f5d76e' }
+    ] : null;
     if (g.endTriggered) txt += '（终局中）';
-    updateTextMesh(this.bannerMesh, txt, L.bar.banner.x, L.bar.banner.y, 17, '#f5d76e', { key: 'banner', stroke: 'rgba(0,0,0,0.5)' });
+    updateTextMesh(this.bannerMesh, txt, L.bar.banner.x, L.bar.banner.y, 17, '#f5d76e', { key: 'banner', stroke: 'rgba(0,0,0,0.5)', runs: bannerRuns });
 
     // 宝石银行竖列
     var keys = COLORS.concat(['Y']);
@@ -3995,9 +4258,15 @@ var GameScreen = {
     else setGlow('execg', null);
 
     // 说明文字（窄屏时缩小字号避免与按钮重叠；人机回合提示 AI 思考中）
-    var msg = p.isAI ? '人机（' + (p.aiLevel === 3 ? '困难' : p.aiLevel === 2 ? '普通' : '简单') + '）思考中…' : this.msgFor(g);
+    var aiLvInfo2 = p.isAI ? (AI_LEVELS[p.aiLevel] || AI_LEVELS[1]) : null;   // 难度信息（含颜色）
+    var msg = p.isAI ? '人机（' + aiLvInfo2.label + '）思考中…' : this.msgFor(g);
     var msgSize = Math.min(13, Math.max(9, Math.floor((L.stage.w * 0.85) / Math.max(6, msg.length))));
-    updateTextMesh(this.msgMesh, msg, L.bar.msg.x, L.bar.msg.y, msgSize, '#cfe0f5', { key: 'msg' });
+    var msgRuns = aiLvInfo2 ? [
+      { text: '人机（', color: '#cfe0f5' },
+      { text: aiLvInfo2.label, color: aiLvInfo2.hex },
+      { text: '）思考中…', color: '#cfe0f5' }
+    ] : null;
+    updateTextMesh(this.msgMesh, msg, L.bar.msg.x, L.bar.msg.y, msgSize, '#cfe0f5', { key: 'msg', runs: msgRuns });
 
     // 目标发光
     this.refreshTargetGlows(g);
