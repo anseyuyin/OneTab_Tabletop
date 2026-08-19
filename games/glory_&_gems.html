@@ -581,7 +581,7 @@ function execReserve(g, p, tier, col, fromDraw) {
     card = g.decks[tier][col].pop();    // 保留展示牌
     if (g.draw[tier].length) g.decks[tier][col].push(g.draw[tier].pop()); // 牌库补一张到展示位
   }
-  p.reserved.push({ card: card, src: 'deck' });
+  p.reserved.push({ card: card, src: fromDraw ? 'deck' : 'show', faceDown: !!fromDraw }); // 盲保留（牌堆取牌）记 faceDown：面板保留区以卡背展示
   g.gold--;
   p.gold++;
   pushLog(g, p, '保留 1 张' + tier + '级牌，获得 1 个黄金');
@@ -705,9 +705,11 @@ var UI = {
   mode: null,        // 'take3' | 'take2' | 'buy' | 'reserve' | null
   selected: [],      // 选中的目标 key 数组
   pickNoble: null,   // 贵族选择阶段：选中的贵族下标
+  resvShow: {},      // 保留区背面牌查看开关：{ [玩家idx]: true=正面展示 }（仅真人玩家面板，不入存档）
+  hiddenResv: {},    // 购买中的保留牌（uid→true）：动画期间在玩家面板上原位隐藏该牌，动画结束 uiReset 清除
 };
 
-function uiReset() { UI.mode = null; UI.selected = []; UI.pickNoble = null; }
+function uiReset() { UI.mode = null; UI.selected = []; UI.pickNoble = null; UI.hiddenResv = {}; }
 function uiSelectMode(m) {
   if (UI.mode === m) { uiReset(); return; }   // 再点同按钮 = 取消
   UI.mode = m; UI.selected = [];
@@ -1834,6 +1836,13 @@ function updateGlows(t) {
 }
 // 快速设置发光矩形（供布局用）
 function glowRect(key, color, x, y, w, h, z, rot) { setGlow(key, color, x, y, w, h, z, rot); }
+// 清除全部高亮光框（动画开始时调用：移除网格并清空映射，避免飞行期间残留选中/可选的发光框）
+function clearGlows() {
+  SceneRoot.glows.forEach(function (g) {
+    if (g.mesh && g.mesh.parent) SceneRoot.root.remove(g.mesh);
+  });
+  SceneRoot.glows.clear();
+}
 
 // 创建宝石堆（圆片 + 数量文字）
 function gemPileGroup(key, colorKey, x, y, size, z) {
@@ -1967,6 +1976,33 @@ FLY.card = function (card, back, from, to, w, h, opts) {
   });
 };
 
+// 卡牌揭示飞行（盲保留的背面牌购买用）：背面从 from 飞到 revealPos（玩家面板正上方）
+// → 原地翻开（X 向翻转，中点换正面）→ 停留 hold 毫秒 → 正面从 revealPos 飞到 to（矿卡计数槽）
+// opts = { fly1, arc1, flip, hold, fly2, arc2, toScale, fadeOut, sfx:{flip, fly2}, rot }
+// rot：整段飞行物朝向，跟随玩家面板方向（底 0° / 顶 180° / 左 -90° / 右 +90°），保证翻开停留与落位朝向一致
+FLY.revealCard = function (card, from, revealPos, to, w, h, opts) {
+  opts = opts || {};
+  var backTex = cardBackTex(card.tier, w, h);
+  var frontTex = cardTex(card, w, h);
+  var z = opts.z === undefined ? FLY._nextZ : opts.z;
+  var mesh = flyMesh(backTex, w, h, from.x, from.y, z);
+  if (opts.rot) mesh.rotation.z = opts.rot;   // 跟随玩家面板方向（底 0° / 顶 180° / 左 -90° / 右 +90°）：翻开停留与落位朝向一致
+  FLY._flights.push({
+    reveal: {
+      from: from, reveal: revealPos, to: to,
+      backTex: backTex, frontTex: frontTex,
+      fly1: opts.fly1 || 520, arc1: opts.arc1 !== undefined ? opts.arc1 : 26,
+      flip: opts.flip || 240, hold: opts.hold !== undefined ? opts.hold : 1500,
+      fly2: opts.fly2 || 560, arc2: opts.arc2 !== undefined ? opts.arc2 : 18,
+      toScale: opts.toScale !== undefined ? opts.toScale : 0.5,
+      fadeOut: opts.fadeOut !== undefined ? opts.fadeOut : true,
+      sfx: opts.sfx || {},
+      stage: 0, t0: 0, t1: 0, t2: 0, t3: 0, swapped: false, started: false,
+    },
+    mesh: mesh, t0: 0, started: false, z: z,
+  });
+};
+
 // 分数文字飞行（+N，如贵族 +3）；supersample 超采样绘制，放大阶段依然清晰
 FLY.text = function (str, from, to, size, color, opts) {
   opts = opts || {};
@@ -2011,6 +2047,64 @@ FLY.update = function (t) {
   var now = Date.now();
   for (var i = arr.length - 1; i >= 0; i--) {
     var f = arr[i];
+    if (f.reveal) {
+      // 揭示飞行（盲保留的背面牌购买）：背面 飞至面板正上方 → 翻开（X 向翻转，中点换正面）→ 停留 → 正面飞向目标
+      var rv = f.reveal;
+      if (!rv.started) { rv.started = true; rv.t0 = now; }
+      var elR = now - rv.t0;
+      var rDone = false;
+      switch (rv.stage) {
+        case 0: {   // 背面：起点（面板保留位）→ 面板正上方
+          var p0 = Math.min(1, Math.max(0, elR / rv.fly1));
+          var e0 = easeOutCubic(p0);
+          var x0 = rv.from.x + (rv.reveal.x - rv.from.x) * e0;
+          var y0 = rv.from.y + (rv.reveal.y - rv.from.y) * e0;
+          if (rv.arc1) y0 += rv.arc1 * Math.sin(Math.PI * p0);
+          f.mesh.position.set(x0, y0, f.z);
+          if (p0 >= 1) { rv.stage = 1; rv.t1 = now; }
+          break;
+        }
+        case 1: {   // 翻开：X 向翻转 1→0→1，过中点换正面纹理
+          var p1 = Math.min(1, Math.max(0, (now - rv.t1) / rv.flip));
+          var sx = Math.abs(Math.cos(Math.PI * p1));
+          f.mesh.scale.set(sx, 1, 1);
+          if (p1 >= 0.5 && !rv.swapped) {
+            rv.swapped = true;
+            f.mesh.material.map = rv.frontTex;
+            f.mesh.material.needsUpdate = true;
+            if (rv.sfx.flip) playSfx(rv.sfx.flip);
+          }
+          if (p1 >= 1) { rv.stage = 2; rv.t2 = now; }
+          break;
+        }
+        case 2: {   // 停留不动（正面展示，默认 1.5s）
+          if (now - rv.t2 >= rv.hold) {
+            rv.stage = 3; rv.t3 = now;
+            if (rv.sfx.fly2) playSfx(rv.sfx.fly2);
+          }
+          break;
+        }
+        case 3: {   // 正面：面板正上方 → 矿卡计数槽（接原购买动画收尾）
+          var p3 = Math.min(1, Math.max(0, (now - rv.t3) / rv.fly2));
+          var e3 = easeOutCubic(p3);
+          var x3 = rv.reveal.x + (rv.to.x - rv.reveal.x) * e3;
+          var y3 = rv.reveal.y + (rv.to.y - rv.reveal.y) * e3;
+          if (rv.arc2) y3 += rv.arc2 * Math.sin(Math.PI * p3);
+          f.mesh.position.set(x3, y3, f.z);
+          var s3 = 1 + (rv.toScale - 1) * e3;
+          f.mesh.scale.set(s3, s3, 1);
+          if (rv.fadeOut && p3 > 0.72) f.mesh.material.opacity = Math.max(0, 1 - (p3 - 0.72) / 0.28);
+          if (p3 >= 1) rDone = true;
+          break;
+        }
+      }
+      if (rDone) {
+        if (f.mesh.parent) SceneRoot.root.remove(f.mesh);
+        disposeGroup(f.mesh);
+        arr.splice(i, 1);
+      }
+      continue;
+    }
     if (!f.started) { f.t0 = now; f.started = true; }
     var el = now - f.t0;
     if (el < f.opts.delay) continue;   // 尚未起飞
@@ -2322,6 +2416,62 @@ function barLocalToWorld(bar, lx, ly, w, h) {
   return { x: bar.x + dx, y: bar.y + dy, w: w, h: h, rot: rot };
 }
 
+// 文本宽度测量（按钮尺寸按实际文字宽计算，避免文字超出按钮）
+var _mctx = null;
+function measureTextWidth2(str, size) {
+  if (!_mctx) _mctx = makeCanvas(1, 1).getContext('2d');
+  _mctx.font = 'bold ' + size + 'px ' + FONT;
+  return _mctx.measureText(str).width;
+}
+
+// 「查看/关闭」按钮纹理：睁眼图标 + 文本；关闭态在睁眼上加一道斜划线（禁用/隐藏视觉）
+// viewFace=false：睁眼 + 「查看」（提示可打开正面）；viewFace=true：睁眼划线 + 「关闭」（提示可关回背面）
+function viewBtnTex(pi, viewFace, w, h) {
+  return makeTex('rvbtn' + pi + ':' + (viewFace ? 1 : 0), w, h, function (ctx, W, H) {
+    // 圆角胶囊底（深色半透明渐变）
+    ctx.globalAlpha = 0.92;
+    var bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, 'rgba(30,38,56,0.96)');
+    bg.addColorStop(1, 'rgba(13,19,33,0.96)');
+    ctx.fillStyle = bg;
+    rr(ctx, 0, 0, W, H, H * 0.5);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = viewFace ? 'rgba(245,215,110,0.9)' : 'rgba(255,255,255,0.45)';
+    rr(ctx, 0.5, 0.5, W - 1, H - 1, H * 0.5);
+    ctx.stroke();
+
+    // 睁眼：杏仁轮廓 + 瞳孔（两种状态共用同一睁眼图标）
+    var iconR = H * 0.34;
+    var ix = iconR + 2, iy = H / 2;
+    ctx.save();
+    ctx.lineWidth = Math.max(1, iconR * 0.3);
+    ctx.strokeStyle = '#ffffff';
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.ellipse(ix, iy, iconR, iconR * 0.66, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ix, iy, iconR * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    if (viewFace) {
+      // 关闭态：睁眼上加一道斜划线
+      ctx.strokeStyle = '#ff8f7a';
+      ctx.lineWidth = Math.max(1.5, iconR * 0.34);
+      ctx.beginPath();
+      ctx.moveTo(ix - iconR * 1.15, iy - iconR * 0.9);
+      ctx.lineTo(ix + iconR * 1.15, iy + iconR * 0.9);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // 文本（右，剩余区域居中）
+    var tsize = Math.max(9, H * 0.62);
+    var tx0 = iconR * 2 + 5;
+    text(ctx, viewFace ? '关闭' : '查看', tx0 + (W - tx0) / 2, H / 2 + 0.5, tsize, viewFace ? '#f5d76e' : '#e8edf6', 'center', true);
+  });
+}
+
 // ============================================================
 // 统一玩家信息内容布局（横/竖面板共用：同字号、同间距、同风格）
 // 在内容坐标系绘制（宽 CW 高 CH）；返回保留牌内容坐标数组 [{cx,cy,w,h,uid}, ...]（空数组 = 无保留牌）
@@ -2329,6 +2479,7 @@ function barLocalToWorld(bar, lx, ly, w, h) {
 function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   // 返回保留牌内容坐标数组：[{cx,cy,w,h,uid}, ...]（空数组 = 无保留牌）
   var rcCards = [];
+  var viewFace = !!(UI.resvShow[pi]);   // 该玩家保留区背面牌的查看开关：true=正面展示
   var pad = Math.max(5, CH * 0.07);
   var midY = CH * 0.52;
 
@@ -2396,7 +2547,7 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   text(ctx, '' + playerGemTotal(p), ccx - scr * 0.32, ccy - scr * 0.32, scr * 0.64, '#3c4048', 'center');
   text(ctx, '' + gemTotalMax, ccx + scr * 0.38, ccy + scr * 0.38, scr * 0.48, '#8a6d1d', 'center');
 
-  // 保留牌区（右端：真实牌面等比缩放、错位排列；点击可在购买模式下选中购买）
+  // 保留牌区（右端：等比缩放、错位排列；盲保留自牌堆的牌以卡背示人，展示区保留显示真实牌面；点击可在购买模式下选中购买）
   // 牌面等比放大（宽度上限 62 ≈ 原 24 的 2.6 倍；高度约束牌高 ≤ 面板高的 90%）；窄面板按剩余空间自适应压缩，避免与资源槽重叠
   var reserved = p.reserved;
   var showN = Math.min(3, reserved.length);
@@ -2445,18 +2596,25 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
   drawGemChip(ctx, gcx, midY, gr, GOLD_INFO.gem, GOLD_INFO.gemDark, GOLD_INFO.stroke);
   text(ctx, '' + p.gold, gcx, midY + 0.5, gr * 0.95, '#ffffff', 'center', true, 'rgba(0,0,0,0.35)');
 
-  // 保留牌（真实牌面等比缩放，右端错位排列：第 0 张最左，最新保留的最右完整可见）
+  // 保留牌（等比缩放，右端错位排列：第 0 张最左，最新保留的最右完整可见；牌堆盲保留 = 卡背，展示区保留 = 真实牌面）
   if (showN) {
     for (var ri = 0; ri < showN; ri++) {
       var r2 = reserved[ri];
       var bx2 = CW - pad - 2 - rw - (showN - 1 - ri) * step;
       var by2 = midY - rh / 2;
-      var ctex = cardTex(r2.card, rw, rh);
-      ctx.drawImage(ctex.image, bx2, by2, rw, rh);
       // 可见区域（内容坐标）：最新（最右）牌完整可见；其余牌的右侧被相邻牌遮挡，
       // 露出左侧 step 段（0.62*rw）——发光框须限于该可见区域，才能避免与相邻保留牌的光框交叠穿透
       var visW2 = (ri === showN - 1) ? rw : step;
       var visCx2 = (ri === showN - 1) ? bx2 + rw / 2 : bx2 + visW2 / 2;
+      // 购买中的保留牌：动画期间原位留空不绘制（其余牌保持原位不重排）；
+      // 点击区仍照常登记，供 resvSpots 记录飞行起点（动画结束 uiReset 清除后随状态变更重排）
+      if (UI.hiddenResv && UI.hiddenResv[r2.card.uid]) {
+        rcCards.push({ cx: bx2 + rw / 2, cy: midY, w: rw, h: rh, uid: r2.card.uid, visCx: visCx2, visW: visW2 });
+        continue;
+      }
+      // 盲保留（牌堆取牌）默认背面示人；玩家点「查看」后该玩家的背面牌以正面示人
+      var ctex = (r2.faceDown && !viewFace) ? cardBackTex(r2.card.tier, rw, rh) : cardTex(r2.card, rw, rh);
+      ctx.drawImage(ctex.image, bx2, by2, rw, rh);
       rcCards.push({ cx: bx2 + rw / 2, cy: midY, w: rw, h: rh, uid: r2.card.uid, visCx: visCx2, visW: visW2 });
     }
   }
@@ -2503,7 +2661,22 @@ function drawPanelContent(ctx, CW, CH, p, pi, isCurrent) {
     ctx.lineTo(bx + rsz * 0.28, by - hh * 0.3);
     ctx.stroke();
   }
-  return rcCards;
+
+  // 「查看/关闭」按钮：仅真人玩家且有盲保留（背面）牌时显示；本函数只返回按钮几何，
+  // 实际绘制为面板上方的独立浮层网格（不覆盖玩家信息板），位置与最右（最新）保留牌同列
+  var viewBtn = null;
+  if (!p.isAI && reserved.some(function (r) { return r.faceDown; })) {
+    var bh = Math.max(14, Math.min(22, CH * 0.26));
+    var iconR = bh * 0.34;
+    var tsize = Math.max(9, bh * 0.62);
+    var label = viewFace ? '关闭' : '查看';
+    var tw = Math.ceil(measureTextWidth2(label, tsize)) + 8;   // 按实际文字宽 + 边距，文字不超出按钮
+    var bw = iconR * 2 + 12 + tw;
+    var bxc = CW - pad - 2 - rw / 2;   // 与最右（最新）保留牌同列
+    var byc = Math.max(10, bh / 2 + 4);
+    viewBtn = { cx: bxc, cy: byc, w: bw, h: bh };
+  }
+  return { rcCards: rcCards, viewBtn: viewBtn };
 }
 
 // ============================================================
@@ -3990,7 +4163,7 @@ var AI = {
       for (k in p.cards) cards[k] = p.cards[k];
       cg.players.push({
         id: p.id, theme: p.theme, gems: gems, gold: p.gold, cards: cards,
-        reserved: p.reserved.map(function (rc) { return { card: rc.card, src: rc.src }; }),
+        reserved: p.reserved.map(function (rc) { return { card: rc.card, src: rc.src, faceDown: rc.faceDown }; }),
         nobles: p.nobles.slice(), score: p.score, isAI: p.isAI, aiLevel: p.aiLevel
       });
     });
@@ -4340,6 +4513,8 @@ function startGameWithAI(n, slots) {
   }
   G.game = g;
   uiReset();
+  UI.resvShow = {};   // 新对局重置保留区查看开关
+  UI.hiddenResv = {}; // 新对局重置购买隐藏标记
   G.game.current = Math.floor(Math.random() * n);
   G.game.firstPlayer = G.game.current;
   G.game.turnCount = 0;
@@ -4397,6 +4572,13 @@ function playActionAnimated(g, info, done) {
   var isHoriz = pos === 0 || pos === 1;
   var CW = isHoriz ? area.w : area.h;   // 与 buildPanel/drawPanelContent 一致（竖面板内容横竖互换）
   var CH = isHoriz ? area.h : area.w;
+  clearGlows();   // 动画开始：清除所有选中/高亮光框（含保留牌蓝色选中框），动画期间不再残留
+  // 购买保留牌：动画一开始即把该牌从玩家面板上隐藏（原位留空），
+  // 避免飞行卡已从信息板飞出、面板上还残留该牌显示；动画结束 uiReset 清除标记并重排
+  if (info.type === 'buy' && info.fromReserved) {
+    UI.hiddenResv[info.card.uid] = true;
+    GameScreen.rebuildPanels();
+  }
   var lay = panelContentLayout(p, CW, CH);
   var layT = lay;
   if (info.type === 'reserve') {
@@ -4438,8 +4620,28 @@ function playActionAnimated(g, info, done) {
         var sh0 = GameScreen.cardShadows[tier + ':' + info.col];
         if (sh0) sh0.visible = false;   // 卡飞走后其落地阴影一并隐藏
       }
-      FLY.card(info.card, false, from, toW(slot), L.cards[tier].w, L.cards[tier].h, { toScale: 0.5, fadeOut: true, dur: 560 });
-      playSfx('whoosh');   // 发展卡飞到玩家：「嗖」
+      // 盲保留（牌堆取牌）的背面牌购买：背面 → 玩家面板正上方 → 翻开正面 → 停留 1.5s → 正面飞向矿卡计数槽
+      var isFaceDown = false;
+      if (info.fromReserved) {
+        var rcx = p.reserved.find(function (r) { return r.card === info.card || r.card.uid === info.card.uid; });
+        isFaceDown = !!(rcx && rcx.faceDown);
+      }
+      if (isFaceDown) {
+        var barH2 = Math.round((L.portrait ? 92 : 104) * 0.7);   // 与 computeLayout 操作栏高一致
+        var lift = 70;   // 停留位再上移一段：确保高于「玩家X · 颜色 的回合」黄色横幅文本（操作栏上方），不遮挡
+        var revPos;
+        if (pos === 0) revPos = { x: area.x, y: area.y + area.h / 2 + 8 + barH2 + lift };      // 底：面板正上方（横幅之上）
+        else if (pos === 1) revPos = { x: area.x, y: area.y - area.h / 2 - 8 - barH2 - lift };  // 顶：朝桌面中央（横幅之下侧，避免遮挡）
+        else if (pos === 2) revPos = { x: area.x + area.w / 2 + 8 + barH2 + lift, y: area.y };  // 左：面板内侧（横幅之上）
+        else revPos = { x: area.x - area.w / 2 - 8 - barH2 - lift, y: area.y };                 // 右：面板内侧（横幅之上）
+        // 与面板内容方向一致（底 0° / 顶 180° / 左 -90° / 右 +90°，同 playNumberPulses 约定），停留展示朝向正确
+        var revRot = pos === 0 ? 0 : pos === 1 ? Math.PI : pos === 2 ? -Math.PI / 2 : Math.PI / 2;
+        playSfx('whoosh');   // 背面起飞：「嗖」
+        FLY.revealCard(info.card, from, revPos, toW(slot), L.cards[tier].w, L.cards[tier].h, { sfx: { flip: 'tap', fly2: 'whoosh' }, rot: revRot });
+      } else {
+        FLY.card(info.card, false, from, toW(slot), L.cards[tier].w, L.cards[tier].h, { toScale: 0.5, fadeOut: true, dur: 560 });
+        playSfx('whoosh');   // 发展卡飞到玩家：「嗖」
+      }
       if (!info.fromReserved && g.draw[tier] && g.draw[tier].length) {
         var nc = g.draw[tier][g.draw[tier].length - 1];   // 牌库顶（仅预览，状态变更时才真正弹出）
         FLY.card(nc, false, deckPos(tier), showPos(tier, info.col), L.cards[tier].w, L.cards[tier].h, { delay: 170, dur: 500, arc: 18 });
@@ -4591,6 +4793,7 @@ var GameScreen = {
   deckLabelNums: {},
   nobleMeshes: {},
   panelMeshes: {},
+  viewBtnMeshes: {},   // 「查看/关闭」浮层按钮（面板上方，不覆盖玩家信息板）
   bannerMesh: null,
   actionBtnMeshes: {},
   execBtnMesh: null,
@@ -4605,6 +4808,7 @@ var GameScreen = {
     var g = G.game;
     this.gemPiles = {}; this.cardMeshes = {}; this.deckLabelNums = {};
     this.nobleMeshes = {}; this.panelMeshes = {}; this.resvSpots = {};
+    this.viewBtnMeshes = {};
     this.deckShadows = {}; this.cardShadows = {}; this.nobleShadows = {}; this.gemShadows = {};
 
     var bg = makeTex('gbg', L.W, L.H, function (ctx, w, h) {
@@ -4735,6 +4939,7 @@ var GameScreen = {
     var w = area.w, h = area.h;
     var isCurrent = g.current === pi && g.phase !== 'end';
     var rcCards = [];   // 保留牌内容坐标 [{cx,cy,w,h,uid}, ...]
+    var viewBtn = null; // 「查看/关闭」背面保留牌按钮内容坐标（无则 null）
 
     // 面板纹理：不缓存（每回合重绘，分数/宝石/当前玩家高亮变化；旧纹理随 mesh 销毁被 GC）
     G._pv = (G._pv || 0) + 1;
@@ -4747,7 +4952,9 @@ var GameScreen = {
       ctx.fill();
       if (isHoriz) {
         // 横面板：内容坐标系 = 纹理坐标系
-        rcCards = drawPanelContent(ctx, W, H, p, pi, isCurrent);
+        var dres = drawPanelContent(ctx, W, H, p, pi, isCurrent);
+        rcCards = dres.rcCards;
+        viewBtn = dres.viewBtn;
       } else {
         // 竖面板：纹理内旋转（左 +90° 内容顶部朝右、右 -90° 内容顶部朝左），mesh 不旋转
         var CW = H, CH = W;
@@ -4755,7 +4962,9 @@ var GameScreen = {
         ctx.translate(W / 2, H / 2);
         ctx.rotate(pos === 2 ? Math.PI / 2 : -Math.PI / 2);
         ctx.translate(-CW / 2, -CH / 2);
-        rcCards = drawPanelContent(ctx, CW, CH, p, pi, isCurrent);
+        var dres2 = drawPanelContent(ctx, CW, CH, p, pi, isCurrent);
+        rcCards = dres2.rcCards;
+        viewBtn = dres2.viewBtn;
         ctx.restore();
       }
     }, true);   // noCache：每回合重绘，防止纹理缓存无限增长
@@ -4793,6 +5002,26 @@ var GameScreen = {
       }
       self2.resvSpots[rc2.uid] = { x: wx, y: wy, w: ww, h: wh, vx: vx, vy: vy, vw: vw2, vh: vh2 };
     });
+    // 「查看/关闭」按钮：独立浮层网格，位于玩家信息板上方（不覆盖面板内容），与最右保留牌同列
+    this.viewBtnMeshes = this.viewBtnMeshes || {};
+    var oldVb = this.viewBtnMeshes[pi];
+    if (oldVb) { SceneRoot.root.remove(oldVb); disposeGroup(oldVb); delete this.viewBtnMeshes[pi]; }
+    if (viewBtn) {
+      var midYC = (isHoriz ? area.h : area.w) * 0.52;          // 与 drawPanelContent midY 一致（定列用）
+      var anc = panelContentToWorld(area, pos, viewBtn.cx, midYC);
+      var bx2, by2, brot2;
+      var btnW2 = viewBtn.w, btnH2 = viewBtn.h;
+      // 按钮底部与玩家信息板顶部间隔 4px（玩家视角的「顶部」：横面板=面板上下缘；竖面板=面板内侧边）
+      if (pos === 0) { bx2 = anc.x; by2 = area.y + area.h / 2 + 4 + btnH2 / 2; brot2 = 0; }          // 底：面板正上方 4px
+      else if (pos === 1) { bx2 = anc.x; by2 = area.y - area.h / 2 - 4 - btnH2 / 2; brot2 = Math.PI; } // 顶：面板内侧下方 4px
+      else if (pos === 2) { bx2 = area.x + area.w / 2 + 4 + btnH2 / 2; by2 = anc.y; brot2 = -Math.PI / 2; } // 左：面板内侧（玩家视角顶边）外 4px，与保留牌同行
+      else { bx2 = area.x - area.w / 2 - 4 - btnH2 / 2; by2 = anc.y; brot2 = Math.PI / 2; }                 // 右：面板内侧外 4px，与保留牌同行
+      var vbtex = viewBtnTex(pi, !!UI.resvShow[pi], viewBtn.w, viewBtn.h);
+      var vbmesh = mkMesh(vbtex, viewBtn.w, viewBtn.h, bx2, by2, 3);
+      vbmesh.rotation.z = brot2;
+      this.viewBtnMeshes[pi] = vbmesh;
+      addClickable('resvView:' + pi, bx2, by2, viewBtn.w, viewBtn.h, 3, brot2);
+    }
   },
 
   refresh: function () {
@@ -4996,13 +5225,16 @@ var GameScreen = {
     var g = G.game;
     if (!g) return;
     // 清理上回合的保留牌点击区（否则数组无限膨胀）
-    SceneRoot.clickables = SceneRoot.clickables.filter(function (c) { return c.key.indexOf('reserved:') !== 0; });
+    SceneRoot.clickables = SceneRoot.clickables.filter(function (c) { return c.key.indexOf('reserved:') !== 0 && c.key.indexOf('resvView:') !== 0; });
     var self = this;
     g.players.forEach(function (p, pi) {
       var mesh = self.panelMeshes[pi];
       if (mesh) { SceneRoot.root.remove(mesh); disposeGroup(mesh); } // 释放 GPU 纹理
     });
     this.panelMeshes = {}; this.resvSpots = {};
+    var vbms = this.viewBtnMeshes || {};
+    for (var vk in vbms) { if (vbms[vk]) { SceneRoot.root.remove(vbms[vk]); disposeGroup(vbms[vk]); } }
+    this.viewBtnMeshes = {};
     for (var pi2 = 0; pi2 < g.nPlayers; pi2++) this.buildPanel(pi2);
   },
 
@@ -5016,6 +5248,17 @@ var GameScreen = {
       this.refresh();
       playSfx('tap');
       PauseModal.open();
+      return;
+    }
+    // 面板「查看/关闭」按钮：切换该玩家保留区背面牌的展示状态（仅真人玩家面板有该按钮；人机回合也可查看）
+    if (key.indexOf('resvView:') === 0) {
+      var vpi = +key.slice(9);
+      var vp = g.players[vpi];
+      if (!vp || vp.isAI) return;
+      if (UI.resvShow[vpi]) delete UI.resvShow[vpi]; else UI.resvShow[vpi] = true;
+      playSfx('tap');
+      this.rebuildPanels();
+      this.refresh();
       return;
     }
     // 人机回合：由 AI 自动执行，忽略玩家手动输入（暂停按钮除外）
@@ -5271,6 +5514,8 @@ function showScreen(name) {
 function startGame(n) {
   G.game = newGame(n);
   uiReset();
+  UI.resvShow = {};   // 新对局重置保留区查看开关
+  UI.hiddenResv = {}; // 新对局重置购买隐藏标记
   G.game.current = Math.floor(Math.random() * n);
   G.game.firstPlayer = G.game.current;
   G.game.turnCount = 0;
@@ -5398,6 +5643,8 @@ function loadGame() {
     });
     G.game = g;
     uiReset();
+    UI.resvShow = {};   // 读档后重置保留区查看开关（展示偏好不随存档恢复）
+    UI.hiddenResv = {}; // 读档后重置购买隐藏标记
     showScreen('game');
     clearSave();          // 读档成功后清理存档记录
     if (typeof AI !== 'undefined' && AI && AI.maybeRun) AI.maybeRun();   // 若读档后轮到人机玩家，自动接上
