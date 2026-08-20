@@ -5385,7 +5385,9 @@ var EndScreen = {
       var isW = g.winner.indexOf(i) >= 0;
       var rowH = Math.min(84 * z, H * 0.115);   // 行距 ≥ 框高放大 1.5 倍后的高度，并列获胜放大互不压盖
       var y = H / 2 - H * 0.34 - i * rowH;
-      var w2 = Math.min(520 * z, W * 0.50), h2 = Math.min(54 * z, H * 0.075);   // 结算行加宽（上限 520，占屏宽 50%）
+      // 竖屏（手机竖屏/窄窗口）：结算行放宽到屏宽 82%（上限 520）——既给左右文本留足空间，
+      // 又给获胜行放大动画留出余量（1.2 倍放大后仍不超出屏幕）
+      var w2 = Math.min(520 * z, W * (W < H ? 0.82 : 0.50)), h2 = Math.min(54 * z, H * 0.075);
       var pad = 14 * z, gap = 12 * z;          // 左右内边距 / 左右文本最小间距（缩放等比）
       var nameStr = p.theme.name + (p.isAI ? ' 人机' : ' 玩家') + (i + 1);
       var infoStr = p.score + ' 分 · 开发 ' + playerCardsCount(p) + ' 张 · 贵族 ' + p.nobles.length + ' 个' + (isW ? '  ★' : '');
@@ -5398,7 +5400,7 @@ var EndScreen = {
         ctx.stroke();
         // 玩家名（左对齐，字号不超框高 1/3，避免窄框内过高）
         var ns = Math.min(13 * z, Hh * 0.32);
-        // 结算信息：右对齐，字号按「框宽 − 玩家名实测宽 − 边距/间距」自适应，任何窗口/缩放下都不与玩家名重叠
+        // 结算信息：右对齐，字号按「框宽 − 玩家名实测宽 − 边距/间距」自适应；单行实在放不下时换到第二行，任何窗口/缩放下都不与玩家名重叠
         ctx.font = 'bold ' + ns + 'px ' + FONT;
         var nameW = ctx.measureText(nameStr).width;
         var avail = Ww - pad - nameW - gap - pad;
@@ -5406,8 +5408,17 @@ var EndScreen = {
         var infoW12 = ctx.measureText(infoStr).width;
         var rfs = Math.min(12 * z, avail * 12 * z / Math.max(1, infoW12));
         rfs = Math.max(7 * z, rfs);            // 最小字号下限（缩放等比）
-        text(ctx, nameStr, pad, Hh / 2, ns, isW ? '#f5d76e' : '#cfd8e8', 'left');
-        text(ctx, infoStr, Ww - pad, Hh / 2, rfs, isW ? '#f5d76e' : '#8fa0b8', 'right');
+        if (infoW12 * rfs / (12 * z) > avail) {
+          // 单行放不下（超窄竖屏兜底）：信息换到第二行左对齐，字号按整行宽度自适应，杜绝与玩家名横向重叠
+          var avail2 = Ww - pad - pad;
+          rfs = Math.min(11 * z, avail2 * 11 * z / Math.max(1, infoW12));
+          rfs = Math.max(6 * z, rfs);          // 双行信息字号下限（缩放等比）
+          text(ctx, nameStr, pad, Hh * 0.32, ns, isW ? '#f5d76e' : '#cfd8e8', 'left');
+          text(ctx, infoStr, pad, Hh * 0.74, rfs, isW ? '#f5d76e' : '#8fa0b8', 'left');
+        } else {
+          text(ctx, nameStr, pad, Hh / 2, ns, isW ? '#f5d76e' : '#cfd8e8', 'left');
+          text(ctx, infoStr, Ww - pad, Hh / 2, rfs, isW ? '#f5d76e' : '#8fa0b8', 'right');
+        }
       }, true);   // noCache：结算行内容随对局变化，禁用缓存避免跨局命中陈旧纹理
       // 获胜行 z 略高且并列时依次递增（放大 1.5 倍后相邻获胜框不互相压盖）
       var mesh = mkMesh(tex, w2, h2, 0, y, isW ? 9.6 + winMeshes.length * 0.1 : 9);
@@ -5475,12 +5486,17 @@ function buildWinAnim(titleMesh, winMeshes, W, H) {
         var ts = 0.4 + 0.6 * easeOutBack(tp);
         this.title.scale.set(ts, ts, 1);
       }
-      // ② 获胜玩家框放大到 1.5 倍（稍延迟，标题先动）
+      // ② 获胜玩家框放大到 1.5 倍（稍延迟，标题先动）；按各框自身宽度限制最大放大倍数，
+      // 保证放大后不超出屏幕宽度（竖屏行宽大时 1.5 倍会溢出屏幕，动态收口；横屏窄行不受影响）
       var bp = Math.min(1, Math.max(0, (el - this.boxDelay) / this.boxDur));
       var bs = 0.7 + 0.8 * easeOutBack(bp);   // 0.7 → 1.5
       for (var bi = 0; bi < this.winBoxes.length; bi++) {
         var wm = this.winBoxes[bi];
-        if (wm.parent) wm.scale.set(bs, bs, 1);
+        if (!wm.parent) continue;
+        var geoW = wm.geometry && wm.geometry.parameters ? wm.geometry.parameters.width : 0;
+        var maxS = geoW > 0 ? Math.min(1.5, (W * 0.985) / geoW) : 1.5;   // 放大后宽度 ≤ 屏宽 98.5%，留安全边距
+        var s = Math.min(bs, maxS);
+        wm.scale.set(s, s, 1);
       }
       // ③ 彩带粒子：飘落 + 水平摆动 + 翻滚（收尾阶段渐隐，避免突然消失）
       var fadeIn = el > 3600 ? Math.max(0, 1 - (el - 3600) / 900) : 1;
