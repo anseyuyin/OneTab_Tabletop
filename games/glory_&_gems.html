@@ -550,7 +550,9 @@ function canBuy(g, p) {
   return p.reserved.some(function (rc) { return canAfford(p, rc.card); });
 }
 function canReserve(g, p) {
-  if (g.gold <= 0 || p.reserved.length >= 3) return false;
+  // 保留唯一限制：每位玩家最多保留 3 张；银行有无黄金、手上是否满 10 均不影响能否保留
+  // （是否 +1 黄金由 execReserve 按「银行有黄金且未满 10」判定）
+  if (p.reserved.length >= 3) return false;
   // 牌库有牌（可盲保留）或展示区有牌（可保留展示牌）
   for (var t = 1; t <= 3; t++) {
     if (g.draw[t].length) return true;
@@ -582,9 +584,14 @@ function execReserve(g, p, tier, col, fromDraw) {
     if (g.draw[tier].length) g.decks[tier][col].push(g.draw[tier].pop()); // 牌库补一张到展示位
   }
   p.reserved.push({ card: card, src: fromDraw ? 'deck' : 'show', faceDown: !!fromDraw }); // 盲保留（牌堆取牌）记 faceDown：面板保留区以卡背展示
-  g.gold--;
-  p.gold++;
-  pushLog(g, p, '保留 1 张' + tier + '级牌，获得 1 个黄金');
+  var gotGold = false;
+  // 保留始终可行（每人最多 3 张）；黄金仅在「银行有黄金且手上未满 10」时发放
+  if (g.gold > 0 && playerGemTotal(p) < GEM_TOTAL_MAX) {
+    g.gold--;
+    p.gold++;
+    gotGold = true;
+  }
+  pushLog(g, p, '保留 1 张' + tier + '级牌' + (gotGold ? '，获得 1 个黄金' : ''));
 }
 function execBuy(g, p, card, fromReserved) {
   // 支付：先按颜色用对应宝石抵扣，各色不足的缺口用黄金（万能）补齐；支付物归还银行
@@ -747,11 +754,11 @@ function uiIsSelectable(g, key) {
     case 'reserve': {
       if (parts[0] === 'card') {
         var t = +parts[1], col = +parts[2];
-        return g.decks[t][col].length > 0 && g.gold > 0 && p.reserved.length < 3;
+        return g.decks[t][col].length > 0 && p.reserved.length < 3;
       }
       if (parts[0] === 'deck') { // 盲保留：从牌库顶拿一张
         var t2 = +parts[1];
-        return g.draw[t2].length > 0 && g.gold > 0 && p.reserved.length < 3;
+        return g.draw[t2].length > 0 && p.reserved.length < 3;
       }
       return false;
     }
@@ -850,7 +857,7 @@ function uiActionFlags(g) {
     canTakeThree(g, p) && total < GEM_TOTAL_MAX,
     canTakeTwo(g, p) && total <= GEM_TOTAL_MAX - 2,
     canBuy(g, p),
-    canReserve(g, p) && total < GEM_TOTAL_MAX
+    canReserve(g, p)   // 保留不受资源上限限制（满 10 或银行无黄金时仅不得黄金）
   ];
 }
 // 行动阶段且 4 种行动全部不可用时，只能跳过
@@ -3403,7 +3410,7 @@ var HelpModal = {
       },
       {
         pic: helpReserve(),
-        tx: '<b>保留区</b>：最多保留 3 张；保留时获得 1 个黄金，保留牌只有自己可购买。'
+        tx: '<b>保留区</b>：最多保留 3 张；保留时银行有黄金且手上未满 10 个则获得 1 个黄金，保留牌只有自己可购买。'
       },
       {
         pic: helpActions(),
@@ -3421,7 +3428,8 @@ var HelpModal = {
       '手中宝石 + 黄金总数最多 <b>10 个</b>，拿取时自动受剩余空间限制。</p>' +
       '<p><b>购买</b>：支付牌面成本；对应颜色宝石不足时，黄金按 1:1 自动补差。' +
       '买下的发展卡提供永久资源与分数。</p>' +
-      '<p><b>保留</b>：从展示区（或牌堆顶盲取）拿 1 张牌，并得 1 个黄金；每人最多保留 3 张，保留牌只有自己可购买。</p>' +
+      '<p><b>保留</b>：从展示区（或牌堆顶盲取）拿 1 张牌；每人最多保留 3 张，保留牌只有自己可购买。' +
+      '保留不受黄金/资源上限限制，银行有黄金且手上未满 10 个时才获得 1 个黄金。</p>' +
       '<p><b>贵族</b>：回合结束自动结算；同时满足多位贵族时手动选择 1 张。</p>' +
       '<p><b>黄金</b>：万能宝石，支付时代替任意颜色；不参与「拿宝石」。</p>' +
       '<p><b>终局</b>：某玩家达 15 分后其余玩家完成同一轮，回到触发者时结束；同分比发展卡数量，再同则并列获胜。</p>';
@@ -3792,7 +3800,7 @@ var AI = {
       var pick3 = AI.take3Colors(g, p, lv, max3);
       if (pick3.length) moves.take3.push({ type: 'take3', cols: pick3 });
     }
-    if (g.gold > 0 && p.reserved.length < 3 && room >= 1) {   // 保留会 +1 黄金，需留空位
+    if (p.reserved.length < 3) {   // 保留唯一限制：最多 3 张（黄金有无、是否满 10 不影响）
       for (var t2 = 1; t2 <= 3; t2++) {
         for (var c2 = 0; c2 < 4; c2++) {
           var card2 = tableCards(g, t2, c2);
@@ -4295,7 +4303,7 @@ var AI = {
       })(0, []);
       combos.forEach(function (cols) { moves.push({ type: 'take3', cols: cols }); });
     }
-    if (g.gold > 0 && p.reserved.length < 3 && room >= 1) {
+    if (p.reserved.length < 3) {   // 保留唯一限制：最多 3 张（黄金有无、是否满 10 不影响）
       for (t = 1; t <= 3; t++) {
         if (g.draw[t].length) moves.push({ type: 'reserve', tier: t, col: 0, fromDraw: true, card: null });
         for (col = 0; col < 4; col++) {
@@ -4416,7 +4424,7 @@ var AI = {
     var k = Math.min(room, avail.length);
     if (k >= 1) return { type: 'take3', cols: avail.slice(0, k) };
     for (i = 0; i < 5; i++) if (g.bank[COLORS[i]] >= 4 && p.gems[COLORS[i]] + 2 <= 10) return { type: 'take2', col: COLORS[i] };
-    if (g.gold > 0 && p.reserved.length < 3 && room >= 1) {
+    if (p.reserved.length < 3) {   // 保留唯一限制：最多 3 张（黄金有无、是否满 10 不影响）
       for (t = 1; t <= 3; t++) for (col = 0; col < 4; col++) {
         var c3 = tableCards(g, t, col);
         if (c3) return { type: 'reserve', tier: t, col: col, fromDraw: false, card: c3 };
@@ -4665,7 +4673,10 @@ function playActionAnimated(g, info, done) {
       var resvCard = info.fromDraw ? { tier: tier2 } : tableCards(g, tier2, info.col);
       FLY.card(resvCard, info.fromDraw, from2, toW(resvT), rs.w, rs.h, { dur: 560, arc: 26 });
       playSfx('whoosh');   // 保留卡飞向玩家：「嗖」
-      FLY.gem('Y', bankPos('Y'), toW(layT.gold), L.gems.size, { delay: 120, dur: 460, onLand: sfxCoinDrop });
+      // 黄金仅在「银行有黄金且手上未满 10」时发放（动画先于状态变更，直接以当前状态判定，与 execReserve 一致）
+      if (g.gold > 0 && playerGemTotal(p) < GEM_TOTAL_MAX) {
+        FLY.gem('Y', bankPos('Y'), toW(layT.gold), L.gems.size, { delay: 120, dur: 460, onLand: sfxCoinDrop });
+      }
       if (!info.fromDraw && g.draw[tier2] && g.draw[tier2].length) {
         var nc2 = g.draw[tier2][g.draw[tier2].length - 1];
         FLY.card(nc2, false, deckPos(tier2), showPos(tier2, info.col), L.cards[tier2].w, L.cards[tier2].h, { delay: 260, dur: 500, arc: 16 });
@@ -5091,8 +5102,8 @@ var GameScreen = {
     // 面板重绘
     this.rebuildPanels();
 
-    // 动作按钮（资源总量上限：每人最多同时持有 10 个含黄金；满 10 时不可再拿/保留，9 时不可拿2个；
-    // 人机回合按钮灰显，由 AI 自动操作）
+    // 动作按钮（资源总量上限：每人最多同时持有 10 个含黄金；满 10 时不可再拿宝石，9 时不可拿2个；
+    // 保留不受此限——满 10 或银行无黄金时仍可保留，只是不得黄金；人机回合按钮灰显，由 AI 自动操作）
     var canAct = g.phase === 'action' && !p.isAI;
     var actions = uiActionFlags(g);
     var actLabels = ['拿3色', '拿2个', '购买', '保留'];
@@ -5150,7 +5161,7 @@ var GameScreen = {
       }
       case 'take2': return '请点选 1 个宝石堆，拿取 2 个（需 ≥4 个）';
       case 'buy': return selN ? '已选牌：按「执行」购买（黄金自动补差）' : '请点选要购买的牌（绿色边缘=可买，含面板上的保留牌）';
-      case 'reserve': return '请点选要保留的牌（或点选左侧牌堆盲取 1 张），同时获得 1 个黄金';
+      case 'reserve': return '请点选要保留的牌（或点选左侧牌堆盲取 1 张）；每人最多保留 3 张，银行有黄金且未满 10 个时获得 1 个黄金';
     }
     return '轮到你行动：请点选下方一种动作';
   },
