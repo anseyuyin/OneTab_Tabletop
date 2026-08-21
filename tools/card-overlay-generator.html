@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>卡牌质感覆盖层生成器</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: #10131a;
+    color: #e8eaf0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 18px;
+    background: linear-gradient(180deg, #1c2029, #171a22);
+    border-bottom: 1px solid #2a2f3d;
+    flex: none;
+  }
+  header .logo {
+    width: 30px; height: 30px; border-radius: 8px; flex: none;
+    background: radial-gradient(circle at 35% 30%, #ffd75e, #b06bff 60%, #2e6fa3);
+    box-shadow: 0 0 12px rgba(176,107,255,.45);
+  }
+  header h1 { font-size: 16px; font-weight: 700; letter-spacing: .5px; }
+  header .sub { font-size: 12px; color: #8b93a7; margin-top: 2px; }
+  main { flex: 1; display: flex; min-height: 0; }
+
+  /* ---------- 控制面板 ---------- */
+  #panel {
+    width: 318px; flex: none; overflow-y: auto;
+    background: #151824; border-right: 1px solid #2a2f3d;
+    padding: 14px 16px 20px;
+    scrollbar-width: thin;
+  }
+  #panel::-webkit-scrollbar { width: 8px; }
+  #panel::-webkit-scrollbar-thumb { background: #333a4a; border-radius: 4px; }
+
+  .group { margin-bottom: 18px; }
+  .group h2 {
+    font-size: 12px; font-weight: 600; color: #9aa3b8;
+    text-transform: uppercase; letter-spacing: 1px;
+    padding-left: 8px; margin-bottom: 10px;
+    border-left: 3px solid #4aa3ff;
+  }
+  .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .presets button {
+    padding: 7px 0; font-size: 12px; color: #dfe3ee;
+    background: #1e2230; border: 1px solid #2e3444; border-radius: 8px;
+    cursor: pointer; transition: all .15s;
+  }
+  .presets button:hover { background: #2a3044; border-color: #4aa3ff; transform: translateY(-1px); }
+
+  .ctrl { margin-bottom: 11px; }
+  .ctrlHead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12.5px; margin-bottom: 5px; color: #c3c9d8;
+  }
+  .ctrlHead b { color: #ffd75e; font-weight: 600; font-variant-numeric: tabular-nums; }
+  input[type="range"] {
+    width: 100%; height: 18px; appearance: none; -webkit-appearance: none;
+    background: transparent; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 5px; border-radius: 3px;
+    background: linear-gradient(90deg, #2a3044, #3a4158);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: #ffd75e; margin-top: -4.5px;
+    border: 2px solid #10131a; box-shadow: 0 0 6px rgba(255,215,94,.6);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 5px; border-radius: 3px; background: #2a3044;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%; background: #ffd75e; border: none;
+  }
+
+  #compass { display: block; background: #10131a; border: 1px solid #2a2f3d; border-radius: 8px; }
+  .compassWrap { display: flex; gap: 10px; align-items: center; }
+  .compassHint { font-size: 11.5px; color: #8b93a7; line-height: 1.5; }
+
+  .exportRow { display: flex; gap: 8px; margin-bottom: 10px; }
+  .exportRow label {
+    flex: 1; font-size: 12px; color: #9aa3b8; display: flex; flex-direction: column; gap: 4px;
+  }
+  select {
+    width: 100%; padding: 6px 8px; font-size: 12.5px; color: #e8eaf0;
+    background: #1e2230; border: 1px solid #2e3444; border-radius: 8px; outline: none;
+  }
+  .btn {
+    width: 100%; padding: 9px 0; margin-top: 8px; font-size: 13px; font-weight: 600;
+    border-radius: 9px; cursor: pointer; transition: all .15s; border: 1px solid transparent;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #3b7dd8, #6a4fd0); color: #fff;
+    box-shadow: 0 3px 10px rgba(59,125,216,.35);
+  }
+  .btn-primary:hover { filter: brightness(1.12); transform: translateY(-1px); }
+  .btn-ghost {
+    background: #1e2230; color: #dfe3ee; border-color: #2e3444;
+  }
+  .btn-ghost:hover { border-color: #4aa3ff; background: #262c3e; }
+
+  .checkRow { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #c3c9d8; margin-top: 4px; }
+  #paramJson {
+    width: 100%; height: 118px; resize: vertical;
+    background: #10131a; color: #c9f0c9;
+    border: 1px solid #2e3444; border-radius: 8px;
+    padding: 8px 10px; outline: none;
+    font: 11.5px/1.55 Consolas, "Courier New", monospace;
+  }
+  #paramJson:focus { border-color: #4aa3ff; }
+  .jsonRow { display: flex; gap: 8px; margin-top: 8px; }
+  .jsonRow .btn { margin-top: 0; }
+  .btn-sm { padding: 7px 0; font-size: 12.5px; }
+  .jsonStatus { font-size: 11.5px; margin-top: 8px; min-height: 16px; color: #8b93a7; word-break: break-all; }
+  .jsonStatus.ok { color: #7ee2a8; }
+  .jsonStatus.err { color: #ff8a8a; }
+  .jsonHint { font-size: 11px; color: #6d7688; line-height: 1.55; margin-top: 8px; }
+  .note { font-size: 11.5px; color: #6d7688; line-height: 1.6; margin-top: 14px; border-top: 1px dashed #2a2f3d; padding-top: 10px; }
+
+  /* ---------- 预览区 ---------- */
+  #stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #stageBar {
+    flex: none; display: flex; align-items: center; gap: 14px;
+    padding: 8px 18px; background: #13161f; border-bottom: 1px solid #2a2f3d;
+    font-size: 12.5px; color: #9aa3b8;
+  }
+  #stageBar .zoomCtrl { display: flex; align-items: center; gap: 8px; }
+  #stageBar input[type="range"] { width: 150px; }
+  #stageBar #zoomVal { color: #ffd75e; font-weight: 600; min-width: 40px; font-variant-numeric: tabular-nums; }
+  .spacer { flex: 1; }
+  .hint { font-size: 11.5px; color: #6d7688; }
+
+  #preview {
+    flex: 1; overflow: auto; padding: 26px 20px;
+    background:
+      radial-gradient(circle at 50% 0%, #1a1e29 0%, #10131a 60%),
+      #10131a;
+    background-image: radial-gradient(rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  #cards {
+    display: flex; flex-wrap: wrap; gap: 26px;
+    justify-content: center; align-items: flex-start;
+    min-height: 100%;
+  }
+  .card-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .card-wrap canvas {
+    border-radius: 10px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06);
+  }
+  .card-cap { font-size: 12px; color: #9aa3b8; letter-spacing: .5px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"></div>
+  <div>
+    <h1>卡牌质感覆盖层生成器</h1>
+    <div class="sub">半透明高光 / 明暗覆盖层 · 增加仿真质感与体积感</div>
+  </div>
+</header>
+
+<main>
+  <aside id="panel">
+    <section class="group">
+      <h2>预设</h2>
+      <div class="presets">
+        <button data-preset="soft">柔和</button>
+        <button data-preset="bright">明亮</button>
+        <button data-preset="deep">深邃</button>
+        <button data-preset="cold">冷光</button>
+        <button data-preset="warm">暖光</button>
+        <button data-preset="paper">纸感</button>
+        <button data-preset="mirror">镜面</button>
+        <button data-preset="gem">珠宝</button>
+        <button data-preset="dusk">黄昏</button>
+        <button data-preset="matte">哑光</button>
+        <button data-preset="holo">镭射</button>
+      </div>
+    </section>
+
+    <section class="group" id="sliders"></section>
+
+    <section class="group">
+      <h2>参数 JSON</h2>
+      <textarea id="paramJson" spellcheck="false" rows="9" placeholder='{"lightAngle":315,...}'></textarea>
+      <div class="jsonRow">
+        <button class="btn btn-primary btn-sm" id="btnCopyJson">复制 JSON</button>
+        <button class="btn btn-ghost btn-sm" id="btnApplyJson">应用参数</button>
+      </div>
+      <div id="jsonStatus" class="jsonStatus"></div>
+      <p class="jsonHint">参数以 JSON 交换：复制后可分享或在其他工具中复用；粘贴后点击「应用参数」生效（缩放为预览项，不包含在 JSON 中）。</p>
+    </section>
+
+    <section class="group">
+      <h2>光照方位</h2>
+      <div class="compassWrap">
+        <canvas id="compass" width="72" height="72"></canvas>
+        <div class="compassHint">调整「光照角度」可移动<br>高光与阴影的位置方向。</div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>导出</h2>
+      <div class="exportRow">
+        <label>倍率
+          <select id="exportScale">
+            <option value="1">1x</option>
+            <option value="2" selected>2x</option>
+            <option value="3">3x</option>
+            <option value="4">4x</option>
+          </select>
+        </label>
+        <label>合成样例
+          <select id="exportSample"></select>
+        </label>
+      </div>
+      <button class="btn btn-primary" id="btnOverlay">导出覆盖层 PNG（透明底）</button>
+      <button class="btn btn-ghost" id="btnOverlayBase64">导出覆盖层 Base64 (透明底)</button>
+      <button class="btn btn-ghost" id="btnComposite">导出合成图 PNG（卡面 + 覆盖层）</button>
+    </section>
+
+    <p class="note">提示：覆盖层为纯半透明黑白渐变（黑=加深、白=提亮），
+      可在 PS / 引擎材质中作为「叠加图层」直接贴到卡面上使用；
+      圆角区域外的部分导出后为全透明。
+      「导出覆盖层 Base64」保存 .txt 文件，内容为透明底 PNG 的 base64 字符串，可嵌入代码或素材工具。</p>
+  </aside>
+
+  <section id="stage">
+    <div id="stageBar">
+      <div class="zoomCtrl">
+        <span>预览缩放</span>
+        <input type="range" id="zoomRange" min="25" max="250" step="1" value="100" />
+        <span id="zoomVal">100%</span>
+      </div>
+      <label class="checkRow" style="margin:0">
+        <input type="checkbox" id="showOverlay" checked />
+        显示覆盖层（取消勾选对比原卡）
+      </label>
+      <label class="checkRow" style="margin:0">
+        <input type="checkbox" id="showIndicator" checked />
+        显示光照指示（仅预览，不影响导出）
+      </label>
+      <div class="spacer"></div>
+      <span class="hint">鼠标滚轮可缩放预览</span>
+    </div>
+    <div id="preview">
+      <div id="cards"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+/* ============================================================
+ * 工具函数
+ * ============================================================ */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const seedFor = (s) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; };
+
+function hexA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgba(${r},${g},${b},${a})`;
+}
+function roundedRect(ctx, x, y, w, h, r) {
+  r = clamp(r, 0, Math.min(w, h) / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function download(dataUrl, name) {
+  const a = document.createElement("a");
+  a.href = dataUrl; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ============================================================
+ * 样例卡定义（不同明暗 / 色调）
+ * ============================================================ */
+const SAMPLES = [
+  { name: "深蓝秘典", bg1: "#0a1830", bg2: "#16325c", accent: "#4aa3ff", gem: "#bfe3ff", titleColor: "#eaf4ff" },
+  { name: "黄金黎明", bg1: "#33260a", bg2: "#8a6a1f", accent: "#ffd75e", gem: "#fff3c4", titleColor: "#fff6d8" },
+  { name: "暗夜密语", bg1: "#12101c", bg2: "#2b1f3d", accent: "#b06bff", gem: "#e6ccff", titleColor: "#f0e6ff" },
+  { name: "霜雪吟唱", bg1: "#e8f2fb", bg2: "#a3bed6", accent: "#2e6fa3", gem: "#ffffff", titleColor: "#1d3b57" },
+  { name: "绯红之誓", bg1: "#280707", bg2: "#6e1212", accent: "#ff6b6b", gem: "#ffd0d0", titleColor: "#ffe9e9" },
+];
+
+/* ============================================================
+ * 样例卡绘制（卡面本身，覆盖层绘制在其上）
+ * ============================================================ */
+function drawCard(ctx, w, h, r, s) {
+  ctx.save();
+  roundedRect(ctx, 0, 0, w, h, r);
+  ctx.clip();
+
+  // 背景渐变
+  const bg = ctx.createLinearGradient(0, 0, w * 0.3, h);
+  bg.addColorStop(0, s.bg1); bg.addColorStop(1, s.bg2);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+
+  // 边框（双层）
+  ctx.strokeStyle = hexA(s.accent, 0.65);
+  ctx.lineWidth = Math.max(2, w * 0.022);
+  roundedRect(ctx, w * 0.045, h * 0.045, w * 0.91, h * 0.91, r * 0.8); ctx.stroke();
+  ctx.strokeStyle = hexA(s.accent, 0.22);
+  ctx.lineWidth = 1;
+  roundedRect(ctx, w * 0.08, h * 0.08, w * 0.84, h * 0.84, r * 0.6); ctx.stroke();
+
+  // 插画区
+  const ax = w * 0.1, ay = h * 0.17, aw = w * 0.8, ah = h * 0.5;
+  const ag = ctx.createRadialGradient(w / 2, ay + ah * 0.42, aw * 0.08, w / 2, ay + ah * 0.42, aw * 0.72);
+  ag.addColorStop(0, hexA(s.accent, 0.42)); ag.addColorStop(1, hexA(s.accent, 0.05));
+  ctx.fillStyle = ag;
+  roundedRect(ctx, ax, ay, aw, ah, r * 0.55); ctx.fill();
+
+  // 装饰光点 + 宝石
+  const rng = mulberry32(seedFor(s.name));
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 7; i++) {
+    const sx = ax + rng() * aw, sy = ay + rng() * ah, sr = aw * (0.05 + rng() * 0.13);
+    ctx.fillStyle = hexA(s.accent, 0.08 + rng() * 0.18);
+    ctx.beginPath(); ctx.arc(sx, sy, sr, 0, Math.PI * 2); ctx.fill();
+  }
+  const gx = w / 2, gy = ay + ah * 0.44, gw = aw * 0.2;
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = hexA(s.gem, 0.9);
+  ctx.beginPath();
+  ctx.moveTo(gx, gy - gw * 0.85); ctx.lineTo(gx + gw * 0.75, gy); ctx.lineTo(gx, gy + gw * 0.85); ctx.lineTo(gx - gw * 0.75, gy);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.beginPath();
+  ctx.moveTo(gx - gw * 0.2, gy - gw * 0.3); ctx.lineTo(gx + gw * 0.22, gy - gw * 0.32);
+  ctx.lineTo(gx + gw * 0.1, gy + gw * 0.28); ctx.lineTo(gx - gw * 0.3, gy + gw * 0.22);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // 标题栏
+  const ty = h * 0.735;
+  ctx.fillStyle = "rgba(0,0,0,0.38)";
+  roundedRect(ctx, w * 0.06, ty, w * 0.88, h * 0.105, r * 0.5); ctx.fill();
+  ctx.fillStyle = s.titleColor;
+  ctx.font = `700 ${w * 0.082}px "Microsoft YaHei","Segoe UI",sans-serif`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(s.name, w / 2, ty + h * 0.052, w * 0.78);
+
+  // 底部属性
+  ctx.font = `600 ${w * 0.055}px "Segoe UI",sans-serif`;
+  ctx.fillStyle = "rgba(255,255,255,0.88)";
+  ctx.textAlign = "left";
+  ctx.fillText("⚔ 3", w * 0.12, h * 0.925);
+  ctx.textAlign = "right";
+  ctx.fillText("✦ 5", w * 0.88, h * 0.925);
+  ctx.restore();
+}
+
+/* 颗粒质感纹理：平滑值噪声（低频基底 + 高频细节），固定种子懒生成一次，
+ * 保证预览与导出一致；以中性灰 128 为中心，配合 overlay 混合不产生灰雾 */
+let noiseTexCache = null;
+function getNoiseTexture() {
+  if (noiseTexCache) return noiseTexCache;
+  const S = 256;
+  const rng = mulberry32(20240517);
+  // 1) 高频随机灰度场（96..160，围绕中性灰 128）
+  const hi = document.createElement("canvas");
+  hi.width = S; hi.height = S;
+  const hctx = hi.getContext("2d");
+  const img = hctx.createImageData(S, S);
+  const d = img.data;
+  for (let i = 0; i < S * S; i++) {
+    const v = 96 + rng() * 64;
+    d[i * 4] = v; d[i * 4 + 1] = v; d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+  }
+  hctx.putImageData(img, 0, 0);
+  // 2) 降采样到 64×64，再双线性放大回 256 → 平滑低频基底
+  const tiny = document.createElement("canvas");
+  tiny.width = 64; tiny.height = 64;
+  const tctx = tiny.getContext("2d");
+  tctx.imageSmoothingEnabled = true;
+  tctx.drawImage(hi, 0, 0, 64, 64);
+  const low = document.createElement("canvas");
+  low.width = S; low.height = S;
+  const lctx = low.getContext("2d");
+  lctx.imageSmoothingEnabled = true;
+  lctx.drawImage(tiny, 0, 0, S, S);
+  // 3) 低频基底上叠回 35% 高频细节，保留细腻颗粒
+  const out = document.createElement("canvas");
+  out.width = S; out.height = S;
+  const octx = out.getContext("2d");
+  octx.drawImage(low, 0, 0);
+  octx.globalAlpha = 0.35;
+  octx.drawImage(hi, 0, 0);
+  octx.globalAlpha = 1;
+  noiseTexCache = out;
+  return out;
+}
+
+/* ============================================================
+ * 半透明覆盖层渲染（黑 = 加深阴影，白 = 提亮高光）
+ * ============================================================ */
+function drawOverlay(ctx, w, h, r, P) {
+  const R = Math.min(w, h);
+  const a = (P.lightAngle * Math.PI) / 180;
+  const dx = Math.sin(a), dy = -Math.cos(a);
+  const cx = w / 2, cy = h / 2;
+
+  ctx.save();
+  roundedRect(ctx, 0, 0, w, h, r);
+  ctx.clip();
+
+  // 1) 环境光：沿光照方向的明 → 暗渐变
+  if (P.specular > 0.001 || P.shadow > 0.001) {
+    const g = ctx.createLinearGradient(cx + dx * R * 0.95, cy + dy * R * 0.95,
+                                      cx - dx * R * 0.95, cy - dy * R * 0.95);
+    g.addColorStop(0, `rgba(255,255,255,${(P.specular * 0.55).toFixed(3)})`);
+    g.addColorStop(0.45, "rgba(255,255,255,0.02)");
+    g.addColorStop(1, `rgba(0,0,0,${(P.shadow).toFixed(3)})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  }
+
+  // 2) 边缘暗角（体积感）
+  if (P.vignette > 0.001) {
+    const vg = ctx.createRadialGradient(cx, cy, R * 0.32, cx, cy, R * 0.82);
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, `rgba(0,0,0,${(P.vignette).toFixed(3)})`);
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, w, h);
+  }
+
+  // 3) 光泽条纹（纺锤形双带反光：柔和主带 + 细亮副带，两端沿光轴渐隐）
+  if (P.gloss > 0.005) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(a);
+    const bw = R * 1.6;                    // 沿光轴方向的长度
+    const bh = R * (0.12 + P.gloss * 0.5); // 主带宽度
+    // 主带：宽、柔和
+    ctx.save();
+    ctx.scale(1, bh / bw);
+    const mg = ctx.createRadialGradient(bw * 0.16, 0, 0, bw * 0.16, 0, bw);
+    mg.addColorStop(0, `rgba(255,255,255,${(P.gloss * 0.5).toFixed(3)})`);
+    mg.addColorStop(0.45, `rgba(255,255,255,${(P.gloss * 0.20).toFixed(3)})`);
+    mg.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = mg;
+    ctx.fillRect(-bw, -bw, bw * 2, bw * 2);
+    ctx.restore();
+    // 副带：窄、更亮，错位偏移（模拟双反光）
+    ctx.save();
+    ctx.scale(1, (bh * 0.42) / bw);
+    const sg2 = ctx.createRadialGradient(bw * 0.34, 0, 0, bw * 0.34, 0, bw);
+    sg2.addColorStop(0, `rgba(255,255,255,${(P.gloss * 0.38).toFixed(3)})`);
+    sg2.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = sg2;
+    ctx.fillRect(-bw, -bw, bw * 2, bw * 2);
+    ctx.restore();
+    ctx.restore();
+  }
+
+  // 4) 镜面高光（随光照角度移动的光斑）
+  if (P.specular > 0.001) {
+    const off = Math.min(R * (0.38 + P.specularSize * 0.52), R * 1.05);
+    const hx = cx + dx * off, hy = cy + dy * off;
+    const hr = R * (0.16 + P.specularSize * 0.55);
+    const sg = ctx.createRadialGradient(hx, hy, Math.max(1, hr * 0.06), hx, hy, hr);
+    sg.addColorStop(0, `rgba(255,255,255,${(P.specular).toFixed(3)})`);
+    sg.addColorStop(0.5, `rgba(255,255,255,${(P.specular * 0.4).toFixed(3)})`);
+    sg.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, w, h);
+  }
+
+  // 5) 颗粒质感（平滑纸纹：overlay 混合，中性灰不产生灰雾）
+  if (P.noise > 0.001) {
+    const tex = getNoiseTexture();
+    ctx.save();
+    ctx.globalCompositeOperation = "overlay";
+    ctx.globalAlpha = clamp(P.noise * 1.4, 0, 0.85);
+    ctx.drawImage(tex, 0, 0, w, h);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+/* 预览专用：光照方向指示（不参与导出） */
+function drawIndicator(ctx, w, h, P) {
+  const R = Math.min(w, h);
+  const a = (P.lightAngle * Math.PI) / 180;
+  const dx = Math.sin(a), dy = -Math.cos(a);
+  const cx = w / 2, cy = h / 2;
+  const off = Math.min(R * (0.38 + P.specularSize * 0.52), R * 1.05);
+  const hx = cx + dx * off, hy = cy + dy * off;
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(255,255,255,0.55)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(hx, hy); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = "rgba(255,220,120,0.9)";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(hx, hy, Math.max(3.5, R * 0.032), 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "rgba(255,220,120,0.85)";
+  ctx.beginPath(); ctx.arc(hx, hy, Math.max(1.8, R * 0.014), 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+/* ============================================================
+ * 参数控件
+ * ============================================================ */
+const CONTROLS = [
+  { id: "lightAngle",   label: "光照角度（高光位置）", min: 0,   max: 360, step: 1,   value: 315, unit: "°",   group: "光照" },
+  { id: "specular",     label: "高光强度",             min: 0,   max: 1,   step: 0.01, value: 0.45, pct: 1,   group: "光照" },
+  { id: "specularSize", label: "高光范围",             min: 0.1, max: 1.4, step: 0.01, value: 0.55, pct: 1,   group: "光照" },
+  { id: "shadow",       label: "阴影深度",             min: 0,   max: 1,   step: 0.01, value: 0.35, pct: 1,   group: "光照" },
+  { id: "vignette",     label: "边缘暗角（体积感）",   min: 0,   max: 1,   step: 0.01, value: 0.45, pct: 1,   group: "表面质感" },
+  { id: "gloss",        label: "光泽条纹",             min: 0,   max: 1,   step: 0.01, value: 0.25, pct: 1,   group: "表面质感" },
+  { id: "noise",        label: "颗粒质感（纸纹）",     min: 0,   max: 0.5, step: 0.01, value: 0.12, pct: 1,   group: "表面质感" },
+  { id: "cardW",        label: "卡牌像素宽度",         min: 16,  max: 512, step: 1,   value: 260, unit: "px", group: "卡牌尺寸" },
+  { id: "cardH",        label: "卡牌像素高度",         min: 16,  max: 512, step: 1,   value: 364, unit: "px", group: "卡牌尺寸" },
+  { id: "radius",       label: "圆角弧度",             min: 0,   max: 170, step: 1,   value: 24,  unit: "px", group: "卡牌尺寸" },
+  { id: "zoom",         label: "预览缩放",             min: 25,  max: 250, step: 1,   value: 100, unit: "%",  group: "预览" },
+];
+
+const inputs = {};   // id -> {el, labelEl, cfg}
+
+function fmtValue(v, cfg) {
+  if (cfg.pct) return Math.round(v * 100) + "%";
+  if (cfg.unit) return Math.round(v) + " " + cfg.unit;
+  return String(Math.round(v * 100) / 100);
+}
+
+function buildControls() {
+  const root = $("sliders");
+  let lastGroup = null, groupEl = null;
+  for (const cfg of CONTROLS) {
+    if (cfg.group !== lastGroup) {
+      lastGroup = cfg.group;
+      groupEl = document.createElement("section");
+      groupEl.className = "group";
+      groupEl.innerHTML = `<h2>${cfg.group}</h2>`;
+      root.appendChild(groupEl);
+    }
+    const row = document.createElement("div");
+    row.className = "ctrl";
+    const head = document.createElement("div");
+    head.className = "ctrlHead";
+    head.innerHTML = `<span>${cfg.label}</span><b>${fmtValue(cfg.value, cfg)}</b>`;
+    const el = document.createElement("input");
+    el.type = "range";
+    el.min = cfg.min; el.max = cfg.max; el.step = cfg.step; el.value = cfg.value;
+    el.addEventListener("input", () => {
+      head.querySelector("b").textContent = fmtValue(+el.value, cfg);
+      onParamChange();
+    });
+    row.append(head, el);
+    groupEl.appendChild(row);
+    inputs[cfg.id] = { el, labelEl: head.querySelector("b"), cfg };
+  }
+}
+
+function readParams() {
+  const P = {};
+  for (const cfg of CONTROLS) P[cfg.id] = parseFloat(inputs[cfg.id].el.value);
+  return P;
+}
+
+function setParam(id, v) {
+  const it = inputs[id];
+  it.el.value = v;
+  it.labelEl.textContent = fmtValue(v, it.cfg);
+}
+
+/* ============================================================
+ * 预设
+ * ============================================================ */
+const PRESETS = {
+  soft:   { lightAngle: 315, specular: 0.30, specularSize: 0.60, shadow: 0.18, vignette: 0.30, gloss: 0.12, noise: 0.06 },
+  bright: { lightAngle: 300, specular: 0.55, specularSize: 0.50, shadow: 0.12, vignette: 0.22, gloss: 0.35, noise: 0.05 },
+  deep:   { lightAngle: 45,  specular: 0.32, specularSize: 0.72, shadow: 0.55, vignette: 0.60, gloss: 0.08, noise: 0.10 },
+  cold:   { lightAngle: 270, specular: 0.50, specularSize: 0.45, shadow: 0.30, vignette: 0.40, gloss: 0.20, noise: 0.07 },
+  warm:   { lightAngle: 0,   specular: 0.45, specularSize: 0.60, shadow: 0.35, vignette: 0.45, gloss: 0.30, noise: 0.08 },
+  paper:  { lightAngle: 315, specular: 0.26, specularSize: 0.80, shadow: 0.24, vignette: 0.38, gloss: 0.04, noise: 0.30 },
+  mirror: { lightAngle: 270, specular: 0.70, specularSize: 0.32, shadow: 0.22, vignette: 0.30, gloss: 0.60, noise: 0.02 },
+  gem:    { lightAngle: 330, specular: 0.62, specularSize: 0.42, shadow: 0.48, vignette: 0.66, gloss: 0.32, noise: 0.04 },
+  dusk:   { lightAngle: 200, specular: 0.42, specularSize: 0.72, shadow: 0.62, vignette: 0.58, gloss: 0.14, noise: 0.09 },
+  matte:  { lightAngle: 45,  specular: 0.24, specularSize: 0.85, shadow: 0.32, vignette: 0.42, gloss: 0.00, noise: 0.16 },
+  holo:   { lightAngle: 300, specular: 0.66, specularSize: 0.88, shadow: 0.20, vignette: 0.30, gloss: 0.72, noise: 0.03 },
+};
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  for (const k of Object.keys(p)) setParam(k, p[k]);
+  onParamChange();
+}
+
+/* ============================================================
+ * 预览渲染
+ * ============================================================ */
+const cardWraps = [];
+
+function buildPreviews() {
+  const cards = $("cards");
+  for (const s of SAMPLES) {
+    const wrap = document.createElement("div");
+    wrap.className = "card-wrap";
+    const canvas = document.createElement("canvas");
+    const cap = document.createElement("div");
+    cap.className = "card-cap";
+    cap.textContent = s.name;
+    wrap.append(canvas, cap);
+    cards.appendChild(wrap);
+    cardWraps.push({ canvas, wrap });
+  }
+  const sel = $("exportSample");
+  SAMPLES.forEach((s, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = s.name;
+    sel.appendChild(o);
+  });
+}
+
+function renderAll() {
+  const P = readParams();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const show = $("showIndicator").checked;
+  const showOv = $("showOverlay").checked;
+
+  cardWraps.forEach(({ canvas, wrap }, i) => {
+    const W = P.cardW, H = P.cardH;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    wrap.style.width = (W * P.zoom / 100) + "px";
+    wrap.style.height = (H * P.zoom / 100) + "px";
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    drawCard(ctx, W, H, P.radius, SAMPLES[i]);
+    if (showOv) {
+      drawOverlay(ctx, W, H, P.radius, P);
+      if (show) drawIndicator(ctx, W, H, P);
+    }
+  });
+  drawCompass();
+  $("zoomVal").textContent = Math.round(P.zoom) + "%";
+}
+
+/* 面板上的光照罗盘 */
+function drawCompass() {
+  const c = $("compass");
+  const ctx = c.getContext("2d");
+  const s = c.width;
+  ctx.clearRect(0, 0, s, s);
+  const cx = s / 2, cy = s / 2;
+  ctx.strokeStyle = "#39415a";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, s / 2 - 5, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = "#2a2f3d";
+  ctx.beginPath(); ctx.moveTo(3, cy); ctx.lineTo(s - 3, cy);
+  ctx.moveTo(cx, 3); ctx.lineTo(cx, s - 3); ctx.stroke();
+  const P = readParams();
+  const a = (P.lightAngle * Math.PI) / 180;
+  const dx = Math.sin(a), dy = -Math.cos(a);
+  const len = s / 2 - 10;
+  ctx.strokeStyle = "#ffd75e";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + dx * len, cy + dy * len); ctx.stroke();
+  ctx.fillStyle = "#ffd75e";
+  ctx.beginPath(); ctx.arc(cx + dx * len, cy + dy * len, 4.5, 0, Math.PI * 2); ctx.fill();
+}
+
+function onParamChange() {
+  renderAll();
+  syncJsonTextarea();
+}
+
+/* ============================================================
+ * 参数 JSON（导出 / 导入）
+ * ============================================================ */
+/* 参与 JSON 交换的参数（缩放仅用于预览，不包含） */
+const JSON_KEYS = CONTROLS.filter((c) => c.id !== "zoom").map((c) => c.id);
+
+function roundNum(v) {
+  const r = Math.round(v * 100) / 100;
+  return r; // JSON.stringify 会自动去掉整数尾的 .00
+}
+
+let jsonDirty = false; // 用户在输入框中编辑过（或粘贴过）则为 true，自动同步暂停
+
+function paramsToJsonObject() {
+  const P = readParams();
+  const obj = {};
+  for (const id of JSON_KEYS) obj[id] = roundNum(P[id]);
+  return obj;
+}
+
+function syncJsonTextarea(force) {
+  const el = $("paramJson");
+  if (!force && jsonDirty) return; // 用户正在编辑时不打扰
+  el.value = JSON.stringify(paramsToJsonObject(), null, 2);
+  jsonDirty = false;
+}
+
+function setJsonStatus(msg, type) {
+  const el = $("jsonStatus");
+  el.textContent = msg;
+  el.className = "jsonStatus" + (type ? " " + type : "");
+}
+
+async function copyJson() {
+  syncJsonTextarea(true);
+  const el = $("paramJson");
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(el.value);
+    ok = true;
+  } catch (e) { /* 非安全上下文，走降级方案 */ }
+  if (!ok) {
+    try {
+      el.focus(); el.select();
+      ok = document.execCommand("copy");
+    } catch (e) { ok = false; }
+    if (ok) el.blur();
+  }
+  setJsonStatus(ok ? "已复制到剪贴板" : "复制失败，请手动全选后 Ctrl+C", ok ? "ok" : "err");
+}
+
+function applyJson() {
+  const el = $("paramJson");
+  let obj;
+  try {
+    obj = JSON.parse(el.value);
+  } catch (e) {
+    setJsonStatus("JSON 解析失败：" + e.message, "err");
+    return;
+  }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    setJsonStatus("JSON 必须是参数对象，例如 {\"lightAngle\":315}", "err");
+    return;
+  }
+  let applied = 0;
+  const skipped = [];
+  for (const cfg of CONTROLS) {
+    if (cfg.id === "zoom") continue;
+    if (!(cfg.id in obj)) continue;
+    let v = Number(obj[cfg.id]);
+    if (!Number.isFinite(v)) { skipped.push(cfg.id); continue; }
+    v = clamp(v, cfg.min, cfg.max);
+    setParam(cfg.id, v);
+    applied++;
+  }
+  const note = skipped.length ? "，忽略无效项：" + skipped.join(", ") : "";
+  setJsonStatus("已应用 " + applied + " 个参数" + note, applied ? "ok" : "err");
+  jsonDirty = false; // 应用成功后输入框内容已被采纳，恢复自动同步
+  onParamChange();
+}
+
+/* ============================================================
+ * 缩放
+ * ============================================================ */
+function setZoom(z) {
+  z = clamp(Math.round(z), 25, 250);
+  setParam("zoom", z);
+  renderAll();
+}
+
+function initZoom() {
+  $("zoomRange").addEventListener("input", () => {
+    setZoom(parseFloat($("zoomRange").value));
+  });
+  const preview = $("preview");
+  preview.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const dir = e.deltaY < 0 ? 6 : -6;
+    setZoom(readParams().zoom + dir);
+  }, { passive: false });
+}
+
+/* ============================================================
+ * 导出
+ * ============================================================ */
+function exportPNG(kind) {
+  const P = readParams();
+  const scale = parseInt($("exportScale").value, 10);
+  const c = document.createElement("canvas");
+  c.width = P.cardW * scale;
+  c.height = P.cardH * scale;
+  const ctx = c.getContext("2d");
+  ctx.scale(scale, scale);
+  if (kind === "composite") {
+    const s = SAMPLES[parseInt($("exportSample").value, 10)];
+    drawCard(ctx, P.cardW, P.cardH, P.radius, s);
+  }
+  drawOverlay(ctx, P.cardW, P.cardH, P.radius, P);
+  const tag = kind === "overlay" ? "覆盖层" : "合成图";
+  const name = `卡牌${tag}_角度${Math.round(P.lightAngle)}°_${P.cardW}x${P.cardH}@${scale}x.png`;
+  download(c.toDataURL("image/png"), name);
+}
+
+/* 导出覆盖层为 Base64 文本（.txt），透明底 PNG 的纯 base64 字符串 */
+function exportOverlayBase64() {
+  const P = readParams();
+  const scale = parseInt($("exportScale").value, 10);
+  const c = document.createElement("canvas");
+  c.width = P.cardW * scale;
+  c.height = P.cardH * scale;
+  const ctx = c.getContext("2d");
+  ctx.scale(scale, scale);
+  drawOverlay(ctx, P.cardW, P.cardH, P.radius, P);
+  const b64 = c.toDataURL("image/png").split(",")[1];
+  const name = `卡牌覆盖层Base64_角度${Math.round(P.lightAngle)}°_${P.cardW}x${P.cardH}@${scale}x.txt`;
+  const blob = new Blob([b64], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  download(url, name);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ============================================================
+ * 初始化
+ * ============================================================ */
+function init() {
+  buildControls();
+  buildPreviews();
+  initZoom();
+
+  $("btnOverlay").addEventListener("click", () => exportPNG("overlay"));
+  $("btnOverlayBase64").addEventListener("click", exportOverlayBase64);
+  $("btnComposite").addEventListener("click", () => exportPNG("composite"));
+  $("btnCopyJson").addEventListener("click", copyJson);
+  $("btnApplyJson").addEventListener("click", applyJson);
+  $("paramJson").addEventListener("input", () => { jsonDirty = true; });
+  $("showOverlay").addEventListener("change", renderAll);
+
+  document.querySelectorAll(".presets button").forEach((btn) => {
+    btn.addEventListener("click", () => applyPreset(btn.dataset.preset));
+  });
+
+  renderAll();
+  syncJsonTextarea(true);
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>

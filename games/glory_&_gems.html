@@ -1327,6 +1327,134 @@ function drawFacetedGem(ctx, cx, cy, r, P) {
   }
 }
 
+// ---------- 卡面光照覆盖层：按 tools/card-overlay-generator.html 的 drawOverlay 逐像素程序化合成 ----------
+// 与工具完全一致的绘制顺序与混合方式：光照渐变/暗角/光泽/镜面高光 = source-over，
+// 颗粒纸纹 = overlay（中性灰≈128 不产生灰雾）；参数即工具导出的 JSON（见 OVERLAY_PARAMS）。
+var OVERLAY_PARAMS = {
+  dev:   { lightAngle: 33,  specular: 0.5, specularSize: 0.9, shadow: 0.1, vignette: 0.08, gloss: 0.03, noise: 0.2 },
+  noble: { lightAngle: 44,  specular: 0.43, specularSize: 0.9, shadow: 0.08, vignette: 0.07, gloss: 0.06, noise: 0.2 }
+};
+function overlayClamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+// 与工具同款随机数生成器（固定种子，保证颗粒与工具逐像素一致）
+function overlayMulberry32(seed) {
+  var t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    var r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// 颗粒质感纹理：与工具 getNoiseTexture 完全一致（固定种子懒生成一次）
+var OVERLAY_NOISE_TEX = null;
+function overlayNoiseTex() {
+  if (OVERLAY_NOISE_TEX) return OVERLAY_NOISE_TEX;
+  var S = 256;
+  var rng = overlayMulberry32(20240517);
+  // 1) 高频随机灰度场（96..160，围绕中性灰 128）
+  var hi = makeCanvas(S, S);
+  var hctx = hi.getContext('2d');
+  var img = hctx.createImageData(S, S);
+  var d = img.data;
+  for (var i = 0; i < S * S; i++) {
+    var v = 96 + rng() * 64;
+    d[i * 4] = v; d[i * 4 + 1] = v; d[i * 4 + 2] = v; d[i * 4 + 3] = 255;
+  }
+  hctx.putImageData(img, 0, 0);
+  // 2) 降采样 64x64 再双线性放大回 256 → 平滑低频基底
+  var tiny = makeCanvas(64, 64);
+  var tctx = tiny.getContext('2d');
+  tctx.imageSmoothingEnabled = true;
+  tctx.drawImage(hi, 0, 0, 64, 64);
+  var low = makeCanvas(S, S);
+  var lctx = low.getContext('2d');
+  lctx.imageSmoothingEnabled = true;
+  lctx.drawImage(tiny, 0, 0, S, S);
+  // 3) 低频基底上叠回 35% 高频细节，保留细腻颗粒
+  var out = makeCanvas(S, S);
+  var octx = out.getContext('2d');
+  octx.drawImage(low, 0, 0);
+  octx.globalAlpha = 0.35;
+  octx.drawImage(hi, 0, 0);
+  octx.globalAlpha = 1;
+  OVERLAY_NOISE_TEX = out;
+  return out;
+}
+// 逐像素还原工具 drawOverlay：在已画好的卡面上叠加光照层（source-over）+ 颗粒层（overlay），
+// 并按卡面圆角裁剪（不溢出卡角）；P 为工具参数对象（lightAngle/specular/specularSize/shadow/vignette/gloss/noise）
+function drawCardOverlayFx(ctx, W, H, radius, P) {
+  var R = Math.min(W, H);
+  var a = (P.lightAngle * Math.PI) / 180;
+  var dx = Math.sin(a), dy = -Math.cos(a);
+  var cx = W / 2, cy = H / 2;
+  ctx.save();
+  rr(ctx, 0, 0, W, H, radius);
+  ctx.clip();
+  // 1) 环境光：沿光照方向的明 → 暗渐变
+  if (P.specular > 0.001 || P.shadow > 0.001) {
+    var g = ctx.createLinearGradient(cx + dx * R * 0.95, cy + dy * R * 0.95,
+                                     cx - dx * R * 0.95, cy - dy * R * 0.95);
+    g.addColorStop(0, 'rgba(255,255,255,' + (P.specular * 0.55).toFixed(3) + ')');
+    g.addColorStop(0.45, 'rgba(255,255,255,0.02)');
+    g.addColorStop(1, 'rgba(0,0,0,' + (P.shadow).toFixed(3) + ')');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  // 2) 边缘暗角（体积感）
+  if (P.vignette > 0.001) {
+    var vg = ctx.createRadialGradient(cx, cy, R * 0.32, cx, cy, R * 0.82);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,' + (P.vignette).toFixed(3) + ')');
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  }
+  // 3) 光泽条纹（纺锤形双带反光：柔和主带 + 细亮副带）
+  if (P.gloss > 0.005) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(a);
+    var bw = R * 1.6;
+    var bh = R * (0.12 + P.gloss * 0.5);
+    // 主带
+    ctx.save();
+    ctx.scale(1, bh / bw);
+    var mg = ctx.createRadialGradient(bw * 0.16, 0, 0, bw * 0.16, 0, bw);
+    mg.addColorStop(0, 'rgba(255,255,255,' + (P.gloss * 0.5).toFixed(3) + ')');
+    mg.addColorStop(0.45, 'rgba(255,255,255,' + (P.gloss * 0.20).toFixed(3) + ')');
+    mg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = mg;
+    ctx.fillRect(-bw, -bw, bw * 2, bw * 2);
+    ctx.restore();
+    // 副带
+    ctx.save();
+    ctx.scale(1, (bh * 0.42) / bw);
+    var sg2 = ctx.createRadialGradient(bw * 0.34, 0, 0, bw * 0.34, 0, bw);
+    sg2.addColorStop(0, 'rgba(255,255,255,' + (P.gloss * 0.38).toFixed(3) + ')');
+    sg2.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sg2;
+    ctx.fillRect(-bw, -bw, bw * 2, bw * 2);
+    ctx.restore();
+    ctx.restore();
+  }
+  // 4) 镜面高光（随光照角度移动的光斑）
+  if (P.specular > 0.001) {
+    var off = Math.min(R * (0.38 + P.specularSize * 0.52), R * 1.05);
+    var hx = cx + dx * off, hy = cy + dy * off;
+    var hr = R * (0.16 + P.specularSize * 0.55);
+    var sg = ctx.createRadialGradient(hx, hy, Math.max(1, hr * 0.06), hx, hy, hr);
+    sg.addColorStop(0, 'rgba(255,255,255,' + (P.specular).toFixed(3) + ')');
+    sg.addColorStop(0.5, 'rgba(255,255,255,' + (P.specular * 0.4).toFixed(3) + ')');
+    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
+  }
+  // 5) 颗粒质感（平滑纸纹：overlay 混合，中性灰不产生灰雾）
+  if (P.noise > 0.001) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = overlayClamp(P.noise * 1.4, 0, 0.85);
+    ctx.drawImage(overlayNoiseTex(), 0, 0, W, H);
+    ctx.restore();
+  }
+  ctx.restore();
+}
 // ---------- 纹理工厂 ----------
 function gemTex(colorKey, size) {
   var info = colorKey === 'Y' ? GOLD_INFO : COLOR_INFO[colorKey];
@@ -1379,6 +1507,9 @@ function cardTex(card, w, h) {
       drawGemChip(ctx, cx, cy, cr, cinfo.gem, cinfo.gemDark, cinfo.stroke);
       text(ctx, '' + card.cost[ci], cx, cy + 0.5, cr * 1.05, cinfo.onChip, 'center', true, cinfo.onChip === '#ffffff' ? 'rgba(0,0,0,0.35)' : null);
     });
+
+    // 表面光泽覆盖层（半透明，压在全部内容之上，塑造卡面光感与质感）
+    drawCardOverlayFx(ctx, W, H, Math.min(8, W * 0.12), OVERLAY_PARAMS.dev);
   });
 }
 
@@ -1422,6 +1553,9 @@ function nobleTex(noble, w, h) {
 
     // 右下角：大分值（金色）
     text(ctx, '3', W * 0.74, H * 0.74, Math.max(14, W * 0.42), '#f2c93c', 'center', true, 'rgba(120,90,10,0.5)');
+
+    // 表面光泽覆盖层（半透明，压在全部内容之上，塑造卡面光感与质感）
+    drawCardOverlayFx(ctx, W, H, Math.min(8, W * 0.12), OVERLAY_PARAMS.noble);
   });
 }
 
@@ -1445,6 +1579,8 @@ function cardBackTex(tier, w, h) {
     ctx.fillRect(-W * 0.16, -W * 0.16, W * 0.32, W * 0.32);
     ctx.restore();
     text(ctx, tier === 1 ? 'I' : tier === 2 ? 'II' : 'III', W / 2, H / 2, Math.max(11, W * 0.3), 'rgba(255,255,255,0.9)', 'center');
+    // 表面光泽覆盖层（半透明，压在全部内容之上，塑造卡面光感与质感）
+    drawCardOverlayFx(ctx, W, H, Math.min(7, W * 0.1), OVERLAY_PARAMS.dev);
   });
 }
 
