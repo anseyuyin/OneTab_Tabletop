@@ -1331,8 +1331,8 @@ function drawFacetedGem(ctx, cx, cy, r, P) {
 // 与工具完全一致的绘制顺序与混合方式：光照渐变/暗角/光泽/镜面高光 = source-over，
 // 颗粒纸纹 = overlay（中性灰≈128 不产生灰雾）；参数即工具导出的 JSON（见 OVERLAY_PARAMS）。
 var OVERLAY_PARAMS = {
-  dev:   { lightAngle: 33,  specular: 0.5, specularSize: 0.9, shadow: 0.1, vignette: 0.08, gloss: 0.03, noise: 0.2 },
-  noble: { lightAngle: 44,  specular: 0.43, specularSize: 0.9, shadow: 0.08, vignette: 0.07, gloss: 0.06, noise: 0.2 }
+  dev:   { lightAngle: 33,  specular: 0.5, specularSize: 0.9, shadow: 0.25, vignette: 0.08, gloss: 0.03, noise: 0.4 },
+  noble: { lightAngle: 44,  specular: 0.43, specularSize: 0.9, shadow: 0.2, vignette: 0.07, gloss: 0.06, noise: 0.4 }
 };
 function overlayClamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 // 与工具同款随机数生成器（固定种子，保证颗粒与工具逐像素一致）
