@@ -1450,7 +1450,14 @@ function drawCardOverlayFx(ctx, W, H, radius, P) {
     ctx.save();
     ctx.globalCompositeOperation = 'overlay';
     ctx.globalAlpha = overlayClamp(P.noise * 1.4, 0, 0.85);
-    ctx.drawImage(overlayNoiseTex(), 0, 0, W, H);
+    // 颗粒密度随缩放补偿：canvas 显示尺寸 = 逻辑尺寸 ÷ zoom（画布显示固定为窗口），
+    // 高 zoom 下卡面在屏幕上按比例缩小；若仍把 256px 颗粒纹理 1:1 拉伸铺满卡面，
+    // 颗粒会被压缩到亚像素并被线性过滤平均成中灰 → 纸纹质感不可见。
+    // 这里按 zoom（下限 1，缩小档与 100% 档保持原表现与工具逐像素一致）放大绘制源
+    // 并只截取左上角区域，使颗粒在屏幕上保持与 100% 缩放时相同的物理尺寸，
+    // 不同分辨率 / 缩放下纸纹质感稳定可见。
+    var zz = (typeof window !== 'undefined' && window.R && window.R.zoom) ? Math.max(1, window.R.zoom) : 1;
+    ctx.drawImage(overlayNoiseTex(), 0, 0, W * zz, H * zz);
     ctx.restore();
   }
   ctx.restore();
@@ -1867,6 +1874,7 @@ function clearScene() {
   R.scene.add(SceneRoot.root);
   SceneRoot.clickables = [];
   SceneRoot.glows.clear();
+  if (typeof TapJitter !== 'undefined') TapJitter.clear();   // 点选抖动随场景一并释放，避免引用已销毁网格
 }
 function disposeGroup(group) {
   group.traverse(function (obj) {
@@ -2059,6 +2067,52 @@ function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 function easeOutQuad(t) { return 1 - (1 - t) * (1 - t); }
 // 回弹缓动（过冲后回落，用于胜利标题/奖杯/玩家框放大）
 function easeOutBack(t) { var c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
+
+// ============================================================
+// 点选摇晃动画（触摸反馈）：点选发展卡（含牌堆）/宝石资源时，
+// 以物件中心为支点做左右小幅旋转摇晃，用非线性的 tween 曲线驱动。
+// ============================================================
+// 非线性的摇晃 tween：t∈[0,1] → 围绕 0 的高频正弦振荡，幅度按 (1-t) 幂律衰减，
+// 首冲最强、随后快速衰减回零——比线性插值更接近真实物件的弹性摇晃手感
+function shakeTween(t) {
+  return Math.sin(t * Math.PI * 5) * Math.pow(1 - t, 1.6);
+}
+
+var TapJitter = {
+  _list: [],   // [{ mesh, key, r0, t0, dur, rotAmp }]
+  // 触发：mesh = 被摇晃的网格；opts = { key, dur, rotAmp(弧度，左右摇晃幅度) }
+  play: function (mesh, opts) {
+    opts = opts || {};
+    if (!mesh || !mesh.parent) return;
+    for (var i = 0; i < this._list.length; i++) {   // 同 key 连点：替换旧摇晃，从新起点续播
+      if (this._list[i].key === opts.key) { this._list.splice(i, 1); break; }
+    }
+    this._list.push({
+      mesh: mesh, key: opts.key,
+      r0: mesh.rotation.z, t0: performance.now(),
+      dur: opts.dur || 300, rotAmp: opts.rotAmp || 0,
+    });
+  },
+  // 由 animate 每帧驱动
+  update: function () {
+    var now = performance.now();
+    var alive = [];
+    for (var i = 0; i < this._list.length; i++) {
+      var j = this._list[i];
+      if (!j.mesh || !j.mesh.parent) continue;   // 网格已被 clearScene 释放：直接丢弃
+      var p = (now - j.t0) / j.dur;
+      if (p >= 1) {   // 结束：精确恢复基准旋转
+        j.mesh.rotation.z = j.r0;
+        continue;
+      }
+      // 非线性的 tween 取样：绕网格自身中心（局部原点）左右摇晃，不位移、不缩放
+      j.mesh.rotation.z = j.r0 + shakeTween(p) * j.rotAmp;
+      alive.push(j);
+    }
+    this._list = alive;
+  },
+  clear: function () { this._list = []; },
+};
 
 var FLY = {
   busy: false,        // true = 有飞行动画播放中（屏蔽输入）
@@ -4937,10 +4991,12 @@ var GameScreen = {
   L: null,
   gemPiles: {},
   cardMeshes: {},
+  deckMeshes: {},        // 牌堆卡背网格（tier → mesh），供点选抖动动画定位
   deckLabelNums: {},
   nobleMeshes: {},
   panelMeshes: {},
   viewBtnMeshes: {},   // 「查看/关闭」浮层按钮（面板上方，不覆盖玩家信息板）
+  resvOverlays: {},    // 保留牌摇晃覆盖网格（uid → mesh）：与面板绘制的保留牌完全对齐，点选时以中心摇晃
   bannerMesh: null,
   actionBtnMeshes: {},
   execBtnMesh: null,
@@ -4953,8 +5009,8 @@ var GameScreen = {
   build: function () {
     var L = this.L = computeLayout();
     var g = G.game;
-    this.gemPiles = {}; this.cardMeshes = {}; this.deckLabelNums = {};
-    this.nobleMeshes = {}; this.panelMeshes = {}; this.resvSpots = {};
+    this.gemPiles = {}; this.cardMeshes = {}; this.deckLabelNums = {}; this.deckMeshes = {};
+    this.nobleMeshes = {}; this.panelMeshes = {}; this.resvSpots = {}; this.resvOverlays = {};
     this.viewBtnMeshes = {};
     this.deckShadows = {}; this.cardShadows = {}; this.nobleShadows = {}; this.gemShadows = {};
 
@@ -4990,7 +5046,7 @@ var GameScreen = {
     this.deckLabelNums = {};
     for (var t = 1; t <= 3; t++) {
       var lb = L.deckLabels[t];
-      mkMesh(cardBackTex(t, lb.w, lb.h), lb.w, lb.h, lb.x, lb.y, 1.6);
+      this.deckMeshes[t] = mkMesh(cardBackTex(t, lb.w, lb.h), lb.w, lb.h, lb.x, lb.y, 1.6);
       this.deckShadows[t] = aoShadow(lb.w, lb.h, lb.x, lb.y, 1.6);
       this.deckLabelNums[t] = mkTextMesh('', lb.x, lb.y + lb.h * 0.18, Math.max(9, lb.w * 0.22), '#ffffff', { key: 'dl' + t, stroke: 'rgba(0,0,0,0.55)' });
       addClickable('deck:' + t, lb.x, lb.y, lb.w, lb.h, 1.6);   // 保留模式：点击牌堆盲取 1 张
@@ -5148,6 +5204,40 @@ var GameScreen = {
         vh2 = rc2.visW;
       }
       self2.resvSpots[rc2.uid] = { x: wx, y: wy, w: ww, h: wh, vx: vx, vy: vy, vw: vw2, vh: vh2 };
+    });
+    // 保留牌摇晃覆盖网格：与面板内绘制的保留牌逐像素对齐的独立网格（纹理按可见区裁剪，
+    // 只覆盖该牌未被相邻保留牌遮挡的可见部分，不压到邻牌上），供点选时以牌中心为支点摇晃。
+    // 与 drawPanelContent 使用相同的纹理与裁剪条件（盲保留默认卡背、查看开关同判），随面板每回合重建。
+    this.resvOverlays = this.resvOverlays || {};
+    var viewFace2 = !!UI.resvShow[pi];
+    rcCards.forEach(function (rc3, ri3) {
+      if (UI.hiddenResv && UI.hiddenResv[rc3.uid]) return;   // 购买中的保留牌：面板原位留空，无需覆盖
+      var rcard = p.reserved.find(function (r) { return r.card.uid === rc3.uid; });
+      if (!rcard) return;
+      var spot3 = self2.resvSpots[rc3.uid];
+      if (!spot3) return;
+      var rw3 = rc3.w, rh3 = rc3.h, visW3 = rc3.visW;   // 牌宽/牌高/可见宽（内容坐标 = 世界像素）
+      var src3 = (rcard.faceDown && !viewFace2) ? cardBackTex(rcard.card.tier, rw3, rh3) : cardTex(rcard.card, rw3, rh3);
+      var bandW3 = pos < 2 ? visW3 : rh3;               // 世界可见框：横面板 宽=visW；竖面板 宽=牌高
+      var bandH3 = pos < 2 ? rh3 : visW3;
+      var ovtex = makeTex('resvov' + rc3.uid + (rcard.faceDown && !viewFace2 ? 'b' : 'f'),
+        bandW3, bandH3, function (ctx2, W2, H2) {
+          if (pos < 2) {
+            // 横面板：直接裁出卡牌左段（可见区）
+            ctx2.drawImage(src3.image, 0, 0, visW3, rh3, 0, 0, bandW3, bandH3);
+          } else if (pos === 2) {
+            // 左竖面板（纹理内 +90° 旋转）：卡牌左段 → 世界可见框的上带
+            ctx2.translate(W2, 0); ctx2.rotate(Math.PI / 2);
+            ctx2.drawImage(src3.image, 0, 0, rw3, rh3);
+          } else {
+            // 右竖面板（纹理内 -90° 旋转）：卡牌左段 → 世界可见框的下带
+            ctx2.translate(0, H2); ctx2.rotate(-Math.PI / 2);
+            ctx2.drawImage(src3.image, 0, 0, rw3, rh3);
+          }
+        }, true);   // noCache：faceDown/查看开关状态随 UI 变化，禁用纹理缓存
+      var ov3 = mkMesh(ovtex, bandW3, bandH3, spot3.vx, spot3.vy, 1.3);
+      if (pos === 1) ov3.rotation.z = Math.PI;   // 顶面板 mesh 旋转 π，与面板一致（纹理不预转）
+      self2.resvOverlays[rc3.uid] = ov3;
     });
     // 「查看/关闭」按钮：独立浮层网格，位于玩家信息板上方（不覆盖面板内容），与最右保留牌同列
     this.viewBtnMeshes = this.viewBtnMeshes || {};
@@ -5379,10 +5469,40 @@ var GameScreen = {
       if (mesh) { SceneRoot.root.remove(mesh); disposeGroup(mesh); } // 释放 GPU 纹理
     });
     this.panelMeshes = {}; this.resvSpots = {};
+    // 保留牌摇晃覆盖网格随面板一并重建（点选摇晃期间被替换时由 TapJitter 按 mesh.parent 丢弃）
+    var ovs = this.resvOverlays || {};
+    for (var ovk in ovs) { if (ovs[ovk]) { SceneRoot.root.remove(ovs[ovk]); disposeGroup(ovs[ovk]); } }
+    this.resvOverlays = {};
     var vbms = this.viewBtnMeshes || {};
     for (var vk in vbms) { if (vbms[vk]) { SceneRoot.root.remove(vbms[vk]); disposeGroup(vbms[vk]); } }
     this.viewBtnMeshes = {};
     for (var pi2 = 0; pi2 < g.nPlayers; pi2++) this.buildPanel(pi2);
+  },
+
+  // 点选摇晃（触摸反馈）：按 key 找到对应网格，以物件中心为支点用非线性的 tween
+  // 播一段左右小幅旋转摇晃（不位移、不缩放）。覆盖：展示区发展卡（card:）、牌堆卡背（deck:）、
+  // 宝石/黄金资源堆（gem:）、玩家面板保留卡（reserved:，摇晃其覆盖网格）
+  playTapJitter: function (key) {
+    var parts = key.split(':');
+    if (parts[0] === 'gem') {
+      var pile = this.gemPiles[parts[1]];
+      if (!pile) return;
+      var isGold = parts[1] === 'Y';
+      var amp = isGold ? 0.09 : 0.07;   // 黄金略强，反馈更明显
+      TapJitter.play(pile.mesh, { key: key, dur: 300, rotAmp: amp });        // 宝石：中心支点左右小幅摇晃
+      TapJitter.play(pile.num, { key: key + ':n', dur: 300, rotAmp: amp });  // 数量文字同步摇晃，保持一体
+    } else if (parts[0] === 'card') {
+      var m = this.cardMeshes[parts[1] + ':' + parts[2]];
+      if (m) TapJitter.play(m, { key: key, dur: 300, rotAmp: 0.055 });   // 发展卡：中心支点左右小幅摇晃
+    } else if (parts[0] === 'deck') {
+      var dm = this.deckMeshes[parts[1]];
+      var dn = this.deckLabelNums[parts[1]];
+      if (dm) TapJitter.play(dm, { key: key, dur: 300, rotAmp: 0.05 });  // 牌堆：卡背中心支点左右摇晃
+      if (dn) TapJitter.play(dn, { key: key + ':x', dur: 300, rotAmp: 0.05 });   // 数量角标同步摇晃
+    } else if (parts[0] === 'reserved') {
+      var ov = this.resvOverlays[parts[1]];   // 面板保留卡：摇晃其独立覆盖网格
+      if (ov) TapJitter.play(ov, { key: key, dur: 300, rotAmp: 0.045 });
+    }
   },
 
   onTap: function (key) {
@@ -5420,7 +5540,8 @@ var GameScreen = {
       if (UI.mode !== 'buy') uiSelectMode('buy');
       var toggled = uiToggleSelect(g, key);
       playSfx(toggled ? 'tap' : 'err');
-      this.refresh();
+      this.refresh();   // 先重建面板（保留卡摇晃覆盖网格随面板重建），再触发摇晃，避免网格被重建打断
+      if (toggled) this.playTapJitter(key);
       return;
     }
     if (g.phase === 'noble-choice') {
@@ -5491,7 +5612,11 @@ var GameScreen = {
       return;
     }
     if (key.indexOf('gem:') === 0 || key.indexOf('card:') === 0 || key.indexOf('deck:') === 0) {
-      if (uiToggleSelect(g, key)) { playSfx('tap'); this.refresh(); }
+      if (uiToggleSelect(g, key)) {
+        playSfx('tap');
+        this.playTapJitter(key);   // 触摸反馈：点选/取消点选时播短促摇晃
+        this.refresh();
+      }
       else playSfx('err');
     }
   },
@@ -6150,6 +6275,7 @@ function animate(t) {
     }
   }
   FLY.update(t || 0);
+  TapJitter.update(t || 0);   // 点选摇晃（触摸反馈）tween 推进
   // 结算胜利庆祝动画（标题/奖杯放大 + 获胜框放大 + 彩带撒花；异常时安全终止）
   if (Screen.current === 'end' && EndScreen.anim) {
     try { EndScreen.anim.update(t || 0); } catch (e) { EndScreen.anim = null; }
