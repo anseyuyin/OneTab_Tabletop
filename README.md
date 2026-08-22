@@ -87,6 +87,10 @@ OneTab_Tabletop/
 │   │   └── ai_lookahead_design.md      # AI 前瞻设计文档（含 MCTS 原型记录）
 │   └── spirit_stone_clash/     # 《灵石争锋》概念设计
 │       └── conceptual design.md
+├── tools/                      # 单文件辅助工具（零依赖）
+│   ├── image-base64-converter.html  # 图片 ⇄ Base64 互转（拖拽批量 / JSON 批量加载）
+│   ├── card-overlay-generator.html  # 卡牌质感覆盖层生成器
+│   └── gemstone-cut-generator.html  # 宝石切面生成器
 ├── dev/                        # 开发工具与实验原型
 │   └── mcts_splendor.js        # MCTS 独立原型（Node 脚本，复用主游戏规则引擎）
 ├── LICENSE                     # MIT License
