@@ -5223,8 +5223,10 @@ var GameScreen = {
       var ovtex = makeTex('resvov' + rc3.uid + (rcard.faceDown && !viewFace2 ? 'b' : 'f'),
         bandW3, bandH3, function (ctx2, W2, H2) {
           if (pos < 2) {
-            // 横面板：直接裁出卡牌左段（可见区）
-            ctx2.drawImage(src3.image, 0, 0, visW3, rh3, 0, 0, bandW3, bandH3);
+            // 横面板：整张牌按自然尺寸绘制（与面板内绘制同款 dest 矩形），
+            // 画布只保留可见左段，右侧超出部分被画布边界裁掉（源矩形单位是位图像素，
+            // 贴图为 DPR 倍分辨率，不可用逻辑尺寸做源裁剪）
+            ctx2.drawImage(src3.image, 0, 0, rw3, rh3);
           } else if (pos === 2) {
             // 左竖面板（纹理内 +90° 旋转）：卡牌左段 → 世界可见框的上带
             ctx2.translate(W2, 0); ctx2.rotate(Math.PI / 2);
