@@ -1875,6 +1875,7 @@ function clearScene() {
   SceneRoot.clickables = [];
   SceneRoot.glows.clear();
   if (typeof TapJitter !== 'undefined') TapJitter.clear();   // 点选抖动随场景一并释放，避免引用已销毁网格
+  if (typeof PadNav !== 'undefined' && PadNav.onSceneReset) PadNav.onSceneReset();   // 手柄导航光标/指示环随场景重建重置
 }
 function disposeGroup(group) {
   group.traverse(function (obj) {
@@ -5960,6 +5961,290 @@ function loadZoom() {
 </script>
 
 <script>
+/* ============================================================
+ * 游戏手柄导航（PadNav）：左摇杆 / 十字方向键 移动方向导航光标，
+ * 在可点击 UI（发展卡、宝石资源、按钮等）之间移动；A 键 / O 键 = 触摸点击。
+ * 选中指示：在选中 UI 中心绘制半透明白色圆环（环宽恒 3px），
+ * 双环交替从小到大扩散（两换交替），放大过程中从半透明渐变到全透明。
+ * ============================================================ */
+'use strict';
+
+var PadNav = {
+  _cursor: null,     // 当前选中在 _cands 中的下标
+  _lastKey: null,    // 上次选中 key（场景重建后尽量保持）
+  _cands: [],        // 当前可导航候选（SceneRoot.clickables 快照）
+  _sig: null,        // 候选签名（key 序列），变化时重选光标
+  _rings: null,      // [mesh, mesh] 双指示环（交替扩散）
+  _texCache: {},     // 环纹理缓存（按尺寸），保证环宽恒为 6px
+  _dirs: {
+    up: { p: false, t: 0, r: false }, down: { p: false, t: 0, r: false },
+    left: { p: false, t: 0, r: false }, right: { p: false, t: 0, r: false },
+  },
+  _btnPrev: { a: false, o: false },   // 确认键上一帧状态（边沿触发）
+  _DIRS: { up: { x: 0, y: 1 }, down: { x: 0, y: -1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } },
+  _REPEAT0: 420,   // 按住方向键到开始重复的延迟（ms）
+  _REPEAT1: 150,   // 重复间隔（ms）
+
+  // 候选列表：暂停弹窗打开时只导航暂停按钮；DOM 模态打开时整体禁用（见 poll）
+  _candidates: function () {
+    var list = SceneRoot.clickables;
+    if (typeof PauseModal !== 'undefined' && PauseModal.visible) {
+      list = list.filter(function (c) { return c.key.indexOf('pause:') === 0; });
+    }
+    return list;
+  },
+  // DOM 模态（玩法说明 / 记录 / 人机配置）打开时：手柄导航暂停，避免误触底层按钮
+  _domBlocked: function () {
+    return !!(document.querySelector('#help-overlay') || document.querySelector('#record-overlay') || document.querySelector('#ai-overlay'));
+  },
+
+  // 场景重建（clearScene）后调用：强制重选光标，重建指示环
+  onSceneReset: function () {
+    PadNav._sig = null;
+    PadNav._cursor = null;
+    PadNav._cands = [];
+    PadNav._rings = null;
+    PadNav._texCache = {};   // 旧环纹理已随场景 disposeGroup 释放，缓存一并作废
+  },
+
+  _refresh: function () {
+    var cands = PadNav._candidates();
+    var sig = '';
+    for (var i = 0; i < cands.length; i++) sig += cands[i].key + '|';
+    if (sig !== PadNav._sig) {
+      PadNav._sig = sig;
+      var idx = -1;
+      if (PadNav._lastKey) {   // 优先保持上次选中的元素（回合流转等重建场景后不跳走）
+        for (var j = 0; j < cands.length; j++) {
+          if (cands[j].key === PadNav._lastKey) { idx = j; break; }
+        }
+      }
+      if (idx < 0) idx = PadNav._centerClosest(cands);
+      PadNav._cursor = idx;
+    } else if (PadNav._cursor != null && PadNav._cursor >= cands.length) {
+      PadNav._cursor = PadNav._centerClosest(cands);   // 防御：候选收缩后光标越界，重新落回默认
+    }
+    PadNav._cands = cands;
+  },
+
+  // 默认选中：优先主按钮（执行 / 开始游戏），否则取离屏幕中心最近的候选
+  _centerClosest: function (cands) {
+    var best = -1, bestD = Infinity;
+    for (var i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      var d = c.x * c.x + c.y * c.y;
+      if (c.key === 'exec' || c.key === 'home:start') d -= 1e5;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  },
+
+  // 方向导航：在 pressed 方向选「夹角最小（优先）、距离最近」的候选
+  _move: function (dirName) {
+    var d = PadNav._DIRS[dirName];
+    var cands = PadNav._cands;
+    if (!cands || !cands.length) return;
+    var cur = PadNav._cursor;
+    if (cur == null || !cands[cur]) {   // 无光标：先落到默认选中
+      PadNav._cursor = PadNav._centerClosest(cands);
+      if (PadNav._cursor >= 0) PadNav._lastKey = cands[PadNav._cursor].key;
+      return;
+    }
+    var fx = cands[cur].x, fy = cands[cur].y;
+    var best = -1, bestScore = -Infinity, bestDist = Infinity;
+    for (var i = 0; i < cands.length; i++) {
+      if (i === cur) continue;
+      var c = cands[i];
+      var dx = c.x - fx, dy = c.y - fy;
+      var dot = dx * d.x + dy * d.y;
+      if (dot <= 0) continue;
+      var dist = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+      var score = dot / dist;   // 夹角余弦：1 = 正前方
+      if (score > bestScore + 1e-9 || (Math.abs(score - bestScore) < 1e-9 && dist < bestDist)) {
+        bestScore = score; bestDist = dist; best = i;
+      }
+    }
+    if (best >= 0) {
+      PadNav._cursor = best;
+      PadNav._lastKey = cands[best].key;
+    }
+  },
+
+  // 确认键（A=0 / O=1）：等同于触摸点击该 UI 中心
+  _confirm: function () {
+    if (typeof FLY !== 'undefined' && FLY.busy) return;   // 飞行动画中：与触摸一致屏蔽输入
+    PadNav._refresh();
+    var cands = PadNav._cands;
+    if (!cands || !cands.length || PadNav._cursor == null) return;
+    var c = cands[PadNav._cursor];
+    if (!c) return;
+    unlockAudio();             // 手柄按键同样解锁音频（首次交互）
+    dispatchTap(c.x, c.y);     // 复用与触摸完全一致的点击分发（含暂停弹窗/各屏幕路由）
+  },
+
+  // 读取手柄方向输入（左摇杆 + 十字方向键）
+  _readDirs: function (gp) {
+    var dirs = { up: false, down: false, left: false, right: false };
+    if (!gp) return dirs;
+    try {
+      var b = gp.buttons;
+      if (b && b.length > 15) {
+        if (b[12].pressed) dirs.up = true;
+        if (b[13].pressed) dirs.down = true;
+        if (b[14].pressed) dirs.left = true;
+        if (b[15].pressed) dirs.right = true;
+      }
+      var ax = gp.axes;
+      if (ax && ax.length > 1) {
+        var x = ax[0], y = ax[1];
+        var mag = Math.sqrt(x * x + y * y);
+        if (mag > 0.45) {
+          var nx = x / mag, ny = y / mag;
+          if (Math.abs(nx) >= Math.abs(ny)) dirs[nx > 0 ? 'right' : 'left'] = true;
+          if (Math.abs(ny) > Math.abs(nx)) dirs[ny > 0 ? 'down' : 'up'] = true;
+        }
+      }
+    } catch (e) { /* 忽略手柄读取错误 */ }
+    return dirs;
+  },
+
+  _getGamepad: function () {
+    try {
+      if (typeof navigator.getGamepads !== 'function') return null;
+      var gps = navigator.getGamepads();
+      for (var i = 0; i < gps.length; i++) {
+        if (gps[i] && gps[i].connected) return gps[i];
+      }
+    } catch (e) { /* 忽略 */ }
+    return null;
+  },
+
+  // 每帧轮询：方向导航 + 确认键（由 animate 调用）
+  poll: function () {
+    if (PadNav._domBlocked()) return;   // DOM 模态打开：暂停手柄导航
+    if (typeof FLY !== 'undefined' && FLY.busy) return;   // 飞行动画中：屏蔽输入
+    // 人机回合：由 AI 自动操作，忽略手柄输入
+    if (Screen.current === 'game' && G.game && G.game.phase !== 'end' && G.game.players[G.game.current].isAI) return;
+    var gp = PadNav._getGamepad();
+    if (!gp) return;
+    PadNav._refresh();
+    var dirs = PadNav._readDirs(gp);
+    var now = performance.now();
+    var names = ['up', 'down', 'left', 'right'];
+    for (var i = 0; i < 4; i++) {
+      var n = names[i], st = PadNav._dirs[n], on = dirs[n];
+      if (on) {
+        // 首次按下立即移动；按住后按 延迟→重复 节奏连续导航
+        if (!st.p) { st.p = true; st.t = now; st.r = false; PadNav._move(n); }
+        else if (now - st.t >= (st.r ? PadNav._REPEAT1 : PadNav._REPEAT0)) { st.t = now; st.r = true; PadNav._move(n); }
+      } else st.p = false;
+    }
+    // A 键（0）/ O 键（1）：边沿触发确认
+    var a = false, o = false;
+    if (gp.buttons && gp.buttons.length > 1) {
+      a = !!gp.buttons[0].pressed;
+      o = !!gp.buttons[1].pressed;
+    }
+    if ((a && !PadNav._btnPrev.a) || (o && !PadNav._btnPrev.o)) PadNav._confirm();
+    PadNav._btnPrev.a = a;
+    PadNav._btnPrev.o = o;
+  },
+
+  // ---- 选中指示环：半透明白色圆环（环宽恒 6px），双环交替从小到大扩散、放大时渐隐 ----
+  _ringTexFor: function (rad) {
+    var half = Math.max(20, Math.ceil(rad + 14));   // 半径外留 14px 边距（含 10px 柔和外晕）
+    var size = half * 2;
+    var key = 'padring' + size;
+    if (PadNav._texCache[key]) return PadNav._texCache[key];
+    var tex = makeTex('padring-' + size, size, size, function (ctx, W, H) {
+      ctx.lineCap = 'round';
+      // 柔和外晕（低透明白，让环在复杂底面上更醒目；与主环同比例收窄）
+      ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, W / 2 - 17, 0, Math.PI * 2);
+      ctx.stroke();
+      // 主环：恒宽 3px 的白色圆环（外缘 = 目标半径）
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, W / 2 - 17, 0, Math.PI * 2);
+      ctx.stroke();
+    }, true);   // 不占全局纹理缓存，由本模块按尺寸自缓存
+    PadNav._texCache[key] = tex;
+    return tex;
+  },
+
+  _ensureRings: function () {
+    if (PadNav._rings && PadNav._rings[0] && PadNav._rings[0].parent) return;
+    PadNav._disposeRings();
+    var tex = PadNav._ringTexFor(24);
+    var rings = [];
+    for (var k = 0; k < 2; k++) {
+      var m = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0 })
+      );
+      m.position.z = 12;   // 高于一切场景元素（含暂停弹窗按钮 z=11）
+      SceneRoot.root.add(m);
+      rings.push(m);
+    }
+    PadNav._rings = rings;
+  },
+
+  _disposeRings: function () {
+    if (!PadNav._rings) return;
+    for (var i = 0; i < PadNav._rings.length; i++) {
+      var m = PadNav._rings[i];
+      if (!m) continue;
+      if (m.parent) SceneRoot.root.remove(m);
+      if (m.geometry) m.geometry.dispose();
+      if (m.material) m.material.dispose();
+    }
+    PadNav._rings = null;
+  },
+
+  // 每帧更新指示环动画（由 animate 调用）
+  update: function (t) {
+    PadNav._refresh();
+    PadNav._ensureRings();
+    var rings = PadNav._rings;
+    if (!rings) return;
+    var cands = PadNav._cands;
+    var c = null;
+    if (PadNav._cursor != null && cands && cands[PadNav._cursor]) c = cands[PadNav._cursor];
+    // 人机回合 / 未连接手柄 / DOM 模态打开 / 无可选元素：隐藏指示环
+    var hide = !c;
+    if (!hide && !PadNav._getGamepad()) hide = true;   // 无手柄连接时不显示导航环
+    if (!hide && Screen.current === 'game' && G.game && (G.game.phase === 'end' || G.game.players[G.game.current].isAI)) hide = true;
+    if (!hide && PadNav._domBlocked()) hide = true;
+    if (hide) {
+      for (var h = 0; h < rings.length; h++) { if (rings[h]) rings[h].visible = false; }
+      return;
+    }
+    // 环半径基准：随选中元素尺寸自适应（约为元素最小边的一半，覆盖元素中心区域）
+    var R = Math.max(14, Math.min(c.w, c.h) / 2 * 0.92);
+    var P = 1400;   // 单环扩散周期（ms）：节奏放缓，双环交替时每 0.7s 扩散一圈
+    for (var k = 0; k < 2; k++) {
+      var m = rings[k];
+      m.visible = true;
+      // 两换交替：双环相位错开半个周期，始终有环正在扩散
+      var phase = ((t + k * (P / 2)) % P) / P;
+      var s = 0.55 + 0.45 * easeOutCubic(phase);   // 从小到大缩放扩散
+      var rad = R * s;
+      var tex = PadNav._ringTexFor(rad);
+      if (m.material.map !== tex) { m.material.map = tex; m.material.needsUpdate = true; }
+      m.material.opacity = 0.85 * (1 - phase);     // 放大时从半透明到全透明
+      var size = (Math.max(20, Math.ceil(rad + 14))) * 2;   // 纹理尺寸 = 世界尺寸（1:1）
+      m.position.set(c.x, c.y, 12);
+      m.scale.set(size, size, 1);
+    }
+  },
+};
+
+</script>
+
+<script>
 /* ============ 主入口 ============ */
 </script>
 <script>
@@ -6267,6 +6552,8 @@ function playSfx(type, delaySec, volScale) {
 function animate(t) {
   requestAnimationFrame(animate);
   updateGlows(t || 0);
+  PadNav.poll();                 // 手柄输入轮询：摇杆/方向键导航 + A 键 / O 键确认
+  PadNav.update(t || 0);         // 手柄导航选中指示环动画（双环交替扩散）
   // 首页氛围光斑呼吸（mesh 被 clearScene 移除后自动跳过）
   if (Screen.current === 'home' && Home.fx) {
     var fx = Home.fx;
