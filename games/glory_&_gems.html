@@ -5963,7 +5963,9 @@ function loadZoom() {
 <script>
 /* ============================================================
  * 游戏手柄导航（PadNav）：左摇杆 / 十字方向键 移动方向导航光标，
- * 在可点击 UI（发展卡、宝石资源、按钮等）之间移动；A 键 / O 键 = 触摸点击。
+ * A 键 / O 键 = 触摸点击。对局中仅可导航「当前可选择的场景物」
+ * （宝石 / 发展卡 / 牌堆 / 保留牌 / 候选贵族）与可用按钮；
+ * 玩法说明 / 对局记录 / 人机配置 等 DOM 弹窗同样支持手柄导航与确认。
  * 选中指示：在选中 UI 中心绘制半透明白色圆环（环宽恒 3px），
  * 双环交替从小到大扩散（两换交替），放大过程中从半透明渐变到全透明。
  * ============================================================ */
@@ -5984,18 +5986,55 @@ var PadNav = {
   _DIRS: { up: { x: 0, y: 1 }, down: { x: 0, y: -1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } },
   _REPEAT0: 420,   // 按住方向键到开始重复的延迟（ms）
   _REPEAT1: 150,   // 重复间隔（ms）
+  // DOM 模态（玩法说明/对局记录/人机配置）手柄导航状态
+  _dom: {
+    overlay: null,      // 当前打开的模态容器元素
+    buttons: [],        // 模态内可交互按钮（<button>）
+    index: -1,          // 当前选中的按钮下标
+    ring1: null, ring2: null,   // DOM 指示环（双环交替扩散）
+    observer: null,     // MutationObserver：模态重绘后刷新按钮列表
+    suppressUntil: 0,   // 模态刚打开时的确认防误触截止时间
+    dirs: { up: { p: false, t: 0, r: false }, down: { p: false, t: 0, r: false }, left: { p: false, t: 0, r: false }, right: { p: false, t: 0, r: false } },
+  },
+  _domCss: false,       // DOM 指示环样式是否已注入
 
-  // 候选列表：暂停弹窗打开时只导航暂停按钮；DOM 模态打开时整体禁用（见 poll）
+  // 候选列表：暂停弹窗打开时只导航暂停按钮；对局中只导航「当前可选择」的场景物与可用按钮
   _candidates: function () {
     var list = SceneRoot.clickables;
     if (typeof PauseModal !== 'undefined' && PauseModal.visible) {
-      list = list.filter(function (c) { return c.key.indexOf('pause:') === 0; });
+      return list.filter(function (c) { return c.key.indexOf('pause:') === 0; });
     }
+    if (Screen.current === 'game') list = list.filter(PadNav._gameNavable);
     return list;
   },
-  // DOM 模态（玩法说明 / 记录 / 人机配置）打开时：手柄导航暂停，避免误触底层按钮
-  _domBlocked: function () {
-    return !!(document.querySelector('#help-overlay') || document.querySelector('#record-overlay') || document.querySelector('#ai-overlay'));
+  // 对局画面候选过滤：场景物（宝石/发展卡/牌堆/保留牌/贵族）只有在当前状态下可选择时才可达；
+  // 暂停/面板查看等控制按钮在可用时始终可达
+  _gameNavable: function (c) {
+    var key = c.key;
+    var g = G.game;
+    if (!g) return false;
+    if (key === 'pause') return true;                 // 暂停按钮：任何阶段都可达
+    if (key.indexOf('resvView:') === 0) return true;  // 面板「查看/关闭」功能按钮
+    if (g.phase === 'noble-choice') {                 // 贵族选择：只有候选贵族可选择
+      if (key.indexOf('noble:') === 0) {
+        var ni = +key.slice(6);
+        return g.nobleChoices.indexOf(ni) >= 0;
+      }
+      return false;
+    }
+    if (g.phase !== 'action') return false;
+    var p = g.players[g.current];
+    if (p.isAI) return false;                          // 人机回合：由 AI 自动操作
+    if (UI.selected.indexOf(key) >= 0) return true;    // 已选中的目标保持可达（可再按确认取消）
+    if (key.indexOf('act:') === 0) {                   // 行动按钮：仅在当前可用时可达
+      var bi = +key.slice(4);
+      return uiActionFlags(g)[bi];
+    }
+    if (key === 'exec') return uiCanExecute(g) || uiAllActionsDisabled(g);   // 可执行或需跳过
+    if (key.indexOf('gem:') === 0 || key.indexOf('card:') === 0 || key.indexOf('deck:') === 0 || key.indexOf('reserved:') === 0) {
+      return uiIsSelectable(g, key);                   // 宝石/发展卡/牌堆/保留牌：按模式可选性
+    }
+    return false;
   },
 
   // 场景重建（clearScene）后调用：强制重选光标，重建指示环
@@ -6060,6 +6099,8 @@ var PadNav = {
       if (dot <= 0) continue;
       var dist = Math.sqrt(dx * dx + dy * dy) || 1e-6;
       var score = dot / dist;   // 夹角余弦：1 = 正前方
+      // 对局画面：角落的「暂停」按钮轻微降权，避免方向导航时被远处正对的角落按钮吸走
+      if (Screen.current === 'game' && c.key === 'pause') score -= 0.1;
       if (score > bestScore + 1e-9 || (Math.abs(score - bestScore) < 1e-9 && dist < bestDist)) {
         bestScore = score; bestDist = dist; best = i;
       }
@@ -6067,6 +6108,7 @@ var PadNav = {
     if (best >= 0) {
       PadNav._cursor = best;
       PadNav._lastKey = cands[best].key;
+      playSfx('nav');   // 方向导航移动音效
     }
   },
 
@@ -6080,6 +6122,177 @@ var PadNav = {
     if (!c) return;
     unlockAudio();             // 手柄按键同样解锁音频（首次交互）
     dispatchTap(c.x, c.y);     // 复用与触摸完全一致的点击分发（含暂停弹窗/各屏幕路由）
+  },
+
+  // ---- DOM 模态（玩法说明 / 对局记录 / 人机配置）手柄导航 ----
+  // 模态按钮为 HTML 元素，直接用 DOM 环（fixed 定位 + CSS 动画）指示选中，确认 = 点击按钮
+  _domOverlay: function () {
+    var d = PadNav._dom;
+    if (d.overlay && !d.overlay.isConnected) PadNav._domClear();   // 模态已关闭：清理残留
+    return document.querySelector('#help-overlay') || document.querySelector('#record-overlay') || document.querySelector('#ai-overlay');
+  },
+
+  _domEnsureRing: function () {
+    var d = PadNav._dom;
+    if (d.ring1) return;
+    if (!PadNav._domCss) {   // 一次性注入指示环样式（双环交替扩散，与画布环节奏一致）
+      var st = document.createElement('style');
+      st.id = 'padnav-dom-css';
+      st.textContent =
+        '.padnav-ring{position:fixed;pointer-events:none;border-radius:50%;' +
+        'border:3px solid rgba(255,255,255,0.85);box-shadow:0 0 8px rgba(255,255,255,0.35);' +
+        'opacity:0;z-index:999999;animation:padnav-ping 1.4s ease-out infinite;}' +
+        '.padnav-ring.r2{animation-delay:0.7s;}' +
+        '@keyframes padnav-ping{0%{transform:scale(0.55);opacity:0.85;}100%{transform:scale(1);opacity:0;}}';
+      document.head.appendChild(st);
+      PadNav._domCss = true;
+    }
+    d.ring1 = document.createElement('div');
+    d.ring1.className = 'padnav-ring';
+    d.ring2 = document.createElement('div');
+    d.ring2.className = 'padnav-ring r2';
+    document.body.appendChild(d.ring1);
+    document.body.appendChild(d.ring2);
+  },
+
+  // 同步模态按钮列表与指示环：模态打开/重绘（如人机配置切换档位）后自动刷新
+  _domSync: function (ov) {
+    var d = PadNav._dom;
+    if (!ov || !ov.isConnected) { PadNav._domClear(); return; }
+    if (d.overlay !== ov) {
+      // 模态刚打开：重置导航状态 + 短暂防误触（避免按住确认键时误点）
+      d.overlay = ov;
+      d.index = -1;
+      d.suppressUntil = performance.now() + 300;
+      for (var k in d.dirs) d.dirs[k].p = false;
+      for (var k2 in PadNav._dirs) PadNav._dirs[k2].p = false;
+      try {   // 监听模态重绘（innerHTML 替换会重建按钮）
+        if (d.observer) d.observer.disconnect();
+        d.observer = new MutationObserver(function () { PadNav._domSync(PadNav._domOverlay()); });
+        d.observer.observe(ov, { childList: true, subtree: true });
+      } catch (e) { /* 无 MutationObserver 时降级为逐帧同步 */ }
+      PadNav._domEnsureRing();
+    }
+    var btns = Array.prototype.slice.call(ov.querySelectorAll('button'));
+    d.buttons = btns;
+    if (d.index >= btns.length) d.index = -1;
+    if (d.index < 0 && btns.length) {
+      // 默认选中主操作按钮（知道了 / 开始游戏），其次清空等非关闭按钮，最后关闭 ✕
+      var def = -1;
+      for (var i = 0; i < btns.length; i++) {
+        var t = (btns[i].textContent || '').trim();
+        if (btns[i].id === 'ai-start' || t.indexOf('知道') >= 0 || t.indexOf('开始') >= 0) { def = i; break; }
+      }
+      if (def < 0) {
+        for (var j = 0; j < btns.length; j++) {
+          if ((btns[j].textContent || '').trim() !== '✕') { def = j; break; }
+        }
+      }
+      d.index = def >= 0 ? def : 0;
+    }
+    PadNav._domPosition();
+  },
+
+  // 将双指示环定位到选中按钮中心（按钮尺寸自适应；无手柄连接时隐藏）
+  _domPosition: function () {
+    var d = PadNav._dom;
+    var b = d.buttons && d.buttons[d.index];
+    var r1 = d.ring1, r2 = d.ring2;
+    var hide = !b || !b.isConnected || !r1 || !r2 || !PadNav._getGamepad();
+    if (hide) {
+      if (r1) r1.style.display = 'none';
+      if (r2) r2.style.display = 'none';
+      return;
+    }
+    var r = b.getBoundingClientRect();
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    var R = Math.max(16, Math.min(r.width, r.height) / 2 * 0.92);
+    var size = R * 2;
+    [r1, r2].forEach(function (el) {
+      el.style.left = (cx - R) + 'px';
+      el.style.top = (cy - R) + 'px';
+      el.style.width = size + 'px';
+      el.style.height = size + 'px';
+      el.style.display = 'block';
+    });
+  },
+
+  _domClear: function () {
+    var d = PadNav._dom;
+    if (d.observer) { try { d.observer.disconnect(); } catch (e) {} d.observer = null; }
+    if (d.ring1) { d.ring1.remove(); d.ring1 = null; }
+    if (d.ring2) { d.ring2.remove(); d.ring2 = null; }
+    d.overlay = null; d.buttons = []; d.index = -1; d.suppressUntil = 0;
+  },
+
+  // DOM 模态方向导航：与画布相同的「夹角优先、距离次之」几何导航，作用于按钮中心
+  _domMove: function (dirName) {
+    var dvec = PadNav._DIRS[dirName];
+    var btns = PadNav._dom.buttons;
+    if (!btns || !btns.length) return;
+    var cur = PadNav._dom.index;
+    var fx, fy;
+    if (cur >= 0 && btns[cur] && btns[cur].isConnected) {
+      var r0 = btns[cur].getBoundingClientRect();
+      fx = r0.left + r0.width / 2; fy = r0.top + r0.height / 2;
+    } else { fx = window.innerWidth / 2; fy = window.innerHeight / 2; }
+    var best = -1, bestScore = -Infinity, bestDist = Infinity;
+    for (var i = 0; i < btns.length; i++) {
+      if (i === cur) continue;
+      var b = btns[i];
+      if (!b.isConnected) continue;
+      var r = b.getBoundingClientRect();
+      var bx = r.left + r.width / 2, by = r.top + r.height / 2;
+      var dx = bx - fx, dy = by - fy;
+      // 视口坐标 y 向下，与画布世界坐标（y 向上）相反，这里翻转 dy
+      var dot = dx * dvec.x - dy * dvec.y;
+      if (dot <= 0) continue;
+      var dist = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+      var score = dot / dist;
+      if (score > bestScore + 1e-9 || (Math.abs(score - bestScore) < 1e-9 && dist < bestDist)) {
+        bestScore = score; bestDist = dist; best = i;
+      }
+    }
+    if (best >= 0) {
+      PadNav._dom.index = best;
+      PadNav._domPosition();
+      playSfx('nav');   // 方向导航移动音效
+    }
+  },
+
+  // DOM 模态确认：A/O 边沿触发 → 点击选中按钮（等同触摸点击）
+  _domConfirm: function () {
+    var d = PadNav._dom;
+    if (performance.now() < (d.suppressUntil || 0)) return;   // 模态刚打开的防误触窗口
+    var b = d.buttons && d.buttons[d.index];
+    if (!b || !b.isConnected) return;
+    unlockAudio();
+    b.click();
+  },
+
+  // DOM 模态每帧轮询（由 poll 在模态打开时调用）
+  _domPoll: function (ov) {
+    var gp = PadNav._getGamepad();
+    if (!gp) { PadNav._domClear(); return; }
+    PadNav._domSync(ov);
+    var dirs = PadNav._readDirs(gp);
+    var now = performance.now();
+    var names = ['up', 'down', 'left', 'right'];
+    for (var i = 0; i < 4; i++) {
+      var n = names[i], st = PadNav._dom.dirs[n], on = dirs[n];
+      if (on) {
+        if (!st.p) { st.p = true; st.t = now; st.r = false; PadNav._domMove(n); }
+        else if (now - st.t >= (st.r ? PadNav._REPEAT1 : PadNav._REPEAT0)) { st.t = now; st.r = true; PadNav._domMove(n); }
+      } else st.p = false;
+    }
+    var a = false, o = false;
+    if (gp.buttons && gp.buttons.length > 1) {
+      a = !!gp.buttons[0].pressed;
+      o = !!gp.buttons[1].pressed;
+    }
+    if ((a && !PadNav._btnPrev.a) || (o && !PadNav._btnPrev.o)) PadNav._domConfirm();
+    PadNav._btnPrev.a = a;
+    PadNav._btnPrev.o = o;
   },
 
   // 读取手柄方向输入（左摇杆 + 十字方向键）
@@ -6121,7 +6334,9 @@ var PadNav = {
 
   // 每帧轮询：方向导航 + 确认键（由 animate 调用）
   poll: function () {
-    if (PadNav._domBlocked()) return;   // DOM 模态打开：暂停手柄导航
+    // DOM 模态（玩法说明/对局记录/人机配置）打开：手柄控制模态按钮
+    var domOv = PadNav._domOverlay();
+    if (domOv) { PadNav._domPoll(domOv); return; }
     if (typeof FLY !== 'undefined' && FLY.busy) return;   // 飞行动画中：屏蔽输入
     // 人机回合：由 AI 自动操作，忽略手柄输入
     if (Screen.current === 'game' && G.game && G.game.phase !== 'end' && G.game.players[G.game.current].isAI) return;
@@ -6210,14 +6425,20 @@ var PadNav = {
     PadNav._ensureRings();
     var rings = PadNav._rings;
     if (!rings) return;
+    // DOM 模态打开：画布指示环隐藏，改用 DOM 环指示模态按钮
+    var domOv = PadNav._domOverlay();
+    if (domOv) {
+      PadNav._domSync(domOv);
+      for (var hh = 0; hh < rings.length; hh++) { if (rings[hh]) rings[hh].visible = false; }
+      return;
+    }
     var cands = PadNav._cands;
     var c = null;
     if (PadNav._cursor != null && cands && cands[PadNav._cursor]) c = cands[PadNav._cursor];
-    // 人机回合 / 未连接手柄 / DOM 模态打开 / 无可选元素：隐藏指示环
+    // 人机回合 / 未连接手柄 / 无可选元素：隐藏指示环
     var hide = !c;
     if (!hide && !PadNav._getGamepad()) hide = true;   // 无手柄连接时不显示导航环
     if (!hide && Screen.current === 'game' && G.game && (G.game.phase === 'end' || G.game.players[G.game.current].isAI)) hide = true;
-    if (!hide && PadNav._domBlocked()) hide = true;
     if (hide) {
       for (var h = 0; h < rings.length; h++) { if (rings[h]) rings[h].visible = false; }
       return;
@@ -6527,6 +6748,17 @@ function playSfx(type, delaySec, volScale) {
         g3.gain.exponentialRampToValueAtTime(0.001, st + 0.13);
         o3.start(st); o3.stop(st + 0.15);
       });
+      return;
+    }
+    if (type === 'nav') {
+      // 方向导航音：短促高频「嗒」声（低音量、极短，区别于确认/点击音，连按时不刺耳）
+      var no = AC.createOscillator(), ng = AC.createGain();
+      no.type = 'triangle';
+      no.frequency.value = 1245;
+      ng.gain.setValueAtTime(0.045, t);
+      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.045);
+      no.connect(ng); ng.connect(AC.destination);
+      no.start(t); no.stop(t + 0.055);
       return;
     }
     var base = type === 'tap' ? 880 : type === 'buy' ? 660 : type === 'err' ? 200 : type === 'start' ? 523 : 440;
