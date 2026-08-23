@@ -238,7 +238,7 @@
 'use strict';
 
 // 游戏版本（首页右下角显示）
-const GAME_VERSION = 'v 1.0.2';
+const GAME_VERSION = 'v 1.1.0';
 
 // ============================================================
 // 统一资源颜色规范（全游戏唯一配色来源，6 种资源）
@@ -5965,13 +5965,18 @@ function loadZoom() {
  * 游戏手柄导航（PadNav）：左摇杆 / 十字方向键 移动方向导航光标，
  * A 键 / O 键 = 触摸点击。对局中仅可导航「当前可选择的场景物」
  * （宝石 / 发展卡 / 牌堆 / 保留牌 / 候选贵族）与可用按钮；
- * 玩法说明 / 对局记录 / 人机配置 等 DOM 弹窗同样支持手柄导航与确认。
+ * 玩法说明 / 对局记录 / 人机配置 等 DOM 弹窗同样支持手柄导航与确认，
+ * 上下方向在按钮无可移动时控制弹窗内容滚动（右侧滑动条）。
+ * 输入模式：默认「点击模式」不显示圆圈指示；有手柄输入自动切「手柄模式」显示指示环，
+ * 再有真实点击/触摸输入则切回「点击模式」，随时按输入类型来回切换。
  * 选中指示：在选中 UI 中心绘制半透明白色圆环（环宽恒 3px），
  * 双环交替从小到大扩散（两换交替），放大过程中从半透明渐变到全透明。
  * ============================================================ */
 'use strict';
 
 var PadNav = {
+  _mode: 'click',    // 输入模式：'click' 点击模式（不显示指示环）/ 'pad' 手柄模式（显示指示环）
+  _clickHook: null,  // 真实指针输入监听（有真实点击/触摸即切回点击模式）
   _cursor: null,     // 当前选中在 _cands 中的下标
   _lastKey: null,    // 上次选中 key（场景重建后尽量保持）
   _cands: [],        // 当前可导航候选（SceneRoot.clickables 快照）
@@ -5991,6 +5996,7 @@ var PadNav = {
     overlay: null,      // 当前打开的模态容器元素
     buttons: [],        // 模态内可交互按钮（<button>）
     index: -1,          // 当前选中的按钮下标
+    scroller: null,     // 模态内可滚动的内容容器（右侧滑动条）
     ring1: null, ring2: null,   // DOM 指示环（双环交替扩散）
     observer: null,     // MutationObserver：模态重绘后刷新按钮列表
     suppressUntil: 0,   // 模态刚打开时的确认防误触截止时间
@@ -6163,6 +6169,7 @@ var PadNav = {
       // 模态刚打开：重置导航状态 + 短暂防误触（避免按住确认键时误点）
       d.overlay = ov;
       d.index = -1;
+      d.scroller = null;
       d.suppressUntil = performance.now() + 300;
       for (var k in d.dirs) d.dirs[k].p = false;
       for (var k2 in PadNav._dirs) PadNav._dirs[k2].p = false;
@@ -6193,12 +6200,12 @@ var PadNav = {
     PadNav._domPosition();
   },
 
-  // 将双指示环定位到选中按钮中心（按钮尺寸自适应；无手柄连接时隐藏）
+  // 将双指示环定位到选中按钮中心（按钮尺寸自适应；点击模式 / 无手柄连接时隐藏）
   _domPosition: function () {
     var d = PadNav._dom;
     var b = d.buttons && d.buttons[d.index];
     var r1 = d.ring1, r2 = d.ring2;
-    var hide = !b || !b.isConnected || !r1 || !r2 || !PadNav._getGamepad();
+    var hide = !b || !b.isConnected || !r1 || !r2 || !PadNav._getGamepad() || PadNav._mode !== 'pad';
     if (hide) {
       if (r1) r1.style.display = 'none';
       if (r2) r2.style.display = 'none';
@@ -6222,14 +6229,14 @@ var PadNav = {
     if (d.observer) { try { d.observer.disconnect(); } catch (e) {} d.observer = null; }
     if (d.ring1) { d.ring1.remove(); d.ring1 = null; }
     if (d.ring2) { d.ring2.remove(); d.ring2 = null; }
-    d.overlay = null; d.buttons = []; d.index = -1; d.suppressUntil = 0;
+    d.overlay = null; d.buttons = []; d.index = -1; d.scroller = null; d.suppressUntil = 0;
   },
 
-  // DOM 模态方向导航：与画布相同的「夹角优先、距离次之」几何导航，作用于按钮中心
+  // DOM 模态方向导航：与画布相同的「夹角优先、距离次之」几何导航，作用于按钮中心；返回是否移动
   _domMove: function (dirName) {
     var dvec = PadNav._DIRS[dirName];
     var btns = PadNav._dom.buttons;
-    if (!btns || !btns.length) return;
+    if (!btns || !btns.length) return false;
     var cur = PadNav._dom.index;
     var fx, fy;
     if (cur >= 0 && btns[cur] && btns[cur].isConnected) {
@@ -6257,7 +6264,52 @@ var PadNav = {
       PadNav._dom.index = best;
       PadNav._domPosition();
       playSfx('nav');   // 方向导航移动音效
+      return true;
     }
+    return false;
+  },
+
+  // DOM 模态方向步进：优先移动按钮光标；按钮无可移动时，上下方向控制内容滚动（右侧滑动条）
+  _domStep: function (dirName) {
+    var moved = PadNav._domMove(dirName);
+    if (!moved && (dirName === 'up' || dirName === 'down')) PadNav._domScroll(dirName);
+  },
+
+  // 滚动模态内容：找到滚动容器（#help-scroll / #record-scroll / #ai-body 或泛化检测），按步长滚动
+  _domScroll: function (dirName) {
+    var d = PadNav._dom;
+    if (!d.scroller || !d.scroller.isConnected) {
+      d.scroller = PadNav._domFindScroller(d.overlay);
+      if (!d.scroller) return;
+    }
+    var el = d.scroller;
+    var maxTop = el.scrollHeight - el.clientHeight;
+    if (maxTop <= 0) return;
+    var step = Math.max(48, Math.round(el.clientHeight * 0.4));   // 每步滚动约 40% 视高
+    var delta = dirName === 'down' ? step : -step;
+    el.scrollTop = Math.max(0, Math.min(maxTop, el.scrollTop + delta));
+  },
+
+  // 查找模态内可滚动的内容容器（右侧滑动条）
+  _domFindScroller: function (ov) {
+    if (!ov) return null;
+    var ids = ['#help-scroll', '#record-scroll', '#ai-body'];
+    for (var i = 0; i < ids.length; i++) {
+      var el = ov.querySelector ? ov.querySelector(ids[i]) : null;
+      if (el && el.scrollHeight > el.clientHeight + 2) return el;
+    }
+    // 兜底：泛化检测 overflow-y 可滚动且内容溢出的容器
+    var all = ov.querySelectorAll ? ov.querySelectorAll('*') : [];
+    for (var j = 0; j < all.length; j++) {
+      var e2 = all[j];
+      try {
+        if (e2.scrollHeight > e2.clientHeight + 2) {
+          var oy = window.getComputedStyle ? window.getComputedStyle(e2).overflowY : '';
+          if (oy === 'auto' || oy === 'scroll' || oy === 'overlay') return e2;
+        }
+      } catch (err) { /* 忽略 */ }
+    }
+    return null;
   },
 
   // DOM 模态确认：A/O 边沿触发 → 点击选中按钮（等同触摸点击）
@@ -6274,6 +6326,7 @@ var PadNav = {
   _domPoll: function (ov) {
     var gp = PadNav._getGamepad();
     if (!gp) { PadNav._domClear(); return; }
+    if (PadNav._inputActive(gp)) PadNav._mode = 'pad';   // 手柄有输入 → 切「手柄模式」
     PadNav._domSync(ov);
     var dirs = PadNav._readDirs(gp);
     var now = performance.now();
@@ -6281,8 +6334,8 @@ var PadNav = {
     for (var i = 0; i < 4; i++) {
       var n = names[i], st = PadNav._dom.dirs[n], on = dirs[n];
       if (on) {
-        if (!st.p) { st.p = true; st.t = now; st.r = false; PadNav._domMove(n); }
-        else if (now - st.t >= (st.r ? PadNav._REPEAT1 : PadNav._REPEAT0)) { st.t = now; st.r = true; PadNav._domMove(n); }
+        if (!st.p) { st.p = true; st.t = now; st.r = false; PadNav._domStep(n); }
+        else if (now - st.t >= (st.r ? PadNav._REPEAT1 : PadNav._REPEAT0)) { st.t = now; st.r = true; PadNav._domStep(n); }
       } else st.p = false;
     }
     var a = false, o = false;
@@ -6332,8 +6385,29 @@ var PadNav = {
     return null;
   },
 
+  // 注册真实指针输入监听：任何真实点击/触摸都切回「点击模式」（手柄确认产生的合成点击不触发）
+  _initClickHook: function () {
+    if (PadNav._clickHook) return;
+    PadNav._clickHook = function () { PadNav._mode = 'click'; };
+    document.addEventListener('pointerdown', PadNav._clickHook, true);
+    document.addEventListener('touchstart', PadNav._clickHook, true);
+  },
+
+  // 手柄是否有输入（任意按键按下或摇杆超出阈值）→ 切换为「手柄模式」
+  _inputActive: function (gp) {
+    if (!gp) return false;
+    try {
+      var b = gp.buttons;
+      for (var i = 0; i < b.length; i++) if (b[i].pressed) return true;
+      var ax = gp.axes;
+      for (var j = 0; j < ax.length; j++) if (Math.abs(ax[j]) > 0.35) return true;
+    } catch (e) { /* 忽略 */ }
+    return false;
+  },
+
   // 每帧轮询：方向导航 + 确认键（由 animate 调用）
   poll: function () {
+    PadNav._initClickHook();
     // DOM 模态（玩法说明/对局记录/人机配置）打开：手柄控制模态按钮
     var domOv = PadNav._domOverlay();
     if (domOv) { PadNav._domPoll(domOv); return; }
@@ -6342,6 +6416,7 @@ var PadNav = {
     if (Screen.current === 'game' && G.game && G.game.phase !== 'end' && G.game.players[G.game.current].isAI) return;
     var gp = PadNav._getGamepad();
     if (!gp) return;
+    if (PadNav._inputActive(gp)) PadNav._mode = 'pad';   // 手柄有输入 → 切「手柄模式」显示指示环
     PadNav._refresh();
     var dirs = PadNav._readDirs(gp);
     var now = performance.now();
@@ -6435,9 +6510,10 @@ var PadNav = {
     var cands = PadNav._cands;
     var c = null;
     if (PadNav._cursor != null && cands && cands[PadNav._cursor]) c = cands[PadNav._cursor];
-    // 人机回合 / 未连接手柄 / 无可选元素：隐藏指示环
+    // 人机回合 / 未连接手柄 / 点击模式 / 无可选元素：隐藏指示环
     var hide = !c;
     if (!hide && !PadNav._getGamepad()) hide = true;   // 无手柄连接时不显示导航环
+    if (!hide && PadNav._mode !== 'pad') hide = true;  // 点击模式：不显示手柄圆圈指示（有手柄输入自动切回）
     if (!hide && Screen.current === 'game' && G.game && (G.game.phase === 'end' || G.game.players[G.game.current].isAI)) hide = true;
     if (hide) {
       for (var h = 0; h < rings.length; h++) { if (rings[h]) rings[h].visible = false; }
