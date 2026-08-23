@@ -4719,6 +4719,7 @@ function startGameWithAI(n, slots) {
   G.game.turnCount = 0;
   G._dealAnim = true;
   showScreen('game');
+  if (typeof PadNav !== 'undefined' && PadNav.onGameEnter) PadNav.onGameEnter();   // 手柄已连接则进入即显示导航指示环
   AI.maybeRun();   // 若随机先手是 AI，自动接上其回合（发牌动画期间会自行延后）
 }
 
@@ -5812,6 +5813,7 @@ function startGame(n) {
   G.game.turnCount = 0;
   G._dealAnim = true;   // 开局发牌动画标志（build 末尾消费）
   showScreen('game');
+  if (typeof PadNav !== 'undefined' && PadNav.onGameEnter) PadNav.onGameEnter();   // 手柄已连接则进入即显示导航指示环
 }
 
 function goHome() {
@@ -5937,6 +5939,7 @@ function loadGame() {
     UI.resvShow = {};   // 读档后重置保留区查看开关（展示偏好不随存档恢复）
     UI.hiddenResv = {}; // 读档后重置购买隐藏标记
     showScreen('game');
+    if (typeof PadNav !== 'undefined' && PadNav.onGameEnter) PadNav.onGameEnter();   // 手柄已连接则进入即显示导航指示环
     clearSave();          // 读档成功后清理存档记录
     if (typeof AI !== 'undefined' && AI && AI.maybeRun) AI.maybeRun();   // 若读档后轮到人机玩家，自动接上
     return true;
@@ -5977,6 +5980,7 @@ function loadZoom() {
 var PadNav = {
   _mode: 'click',    // 输入模式：'click' 点击模式（不显示指示环）/ 'pad' 手柄模式（显示指示环）
   _clickHook: null,  // 真实指针输入监听（有真实点击/触摸即切回点击模式）
+  _connInit: false,  // 页面加载时的手柄连接检测是否已完成（一次性）
   _cursor: null,     // 当前选中在 _cands 中的下标
   _lastKey: null,    // 上次选中 key（场景重建后尽量保持）
   _cands: [],        // 当前可导航候选（SceneRoot.clickables 快照）
@@ -6022,6 +6026,7 @@ var PadNav = {
     if (key === 'pause') return true;                 // 暂停按钮：任何阶段都可达
     if (key.indexOf('resvView:') === 0) return true;  // 面板「查看/关闭」功能按钮
     if (g.phase === 'noble-choice') {                 // 贵族选择：只有候选贵族可选择
+      if (g.players[g.current].isAI) return false;    // 人机回合的贵族由 AI 处理，玩家仅可暂停/查看
       if (key.indexOf('noble:') === 0) {
         var ni = +key.slice(6);
         return g.nobleChoices.indexOf(ni) >= 0;
@@ -6391,6 +6396,13 @@ var PadNav = {
     PadNav._clickHook = function () { PadNav._mode = 'click'; };
     document.addEventListener('pointerdown', PadNav._clickHook, true);
     document.addEventListener('touchstart', PadNav._clickHook, true);
+    // 手柄连接（含页面加载前已连接、首次交互后浏览器补发的事件）→ 直接切「手柄模式」
+    window.addEventListener('gamepadconnected', function () { PadNav._mode = 'pad'; });
+  },
+
+  // 进入对局：手柄已连接则直接显示指示环（无需先按方向键）
+  onGameEnter: function () {
+    if (PadNav._getGamepad()) PadNav._mode = 'pad';
   },
 
   // 手柄是否有输入（任意按键按下或摇杆超出阈值）→ 切换为「手柄模式」
@@ -6408,12 +6420,15 @@ var PadNav = {
   // 每帧轮询：方向导航 + 确认键（由 animate 调用）
   poll: function () {
     PadNav._initClickHook();
+    if (!PadNav._connInit) {   // 页面加载时手柄已连接：一次性默认切「手柄模式」
+      PadNav._connInit = true;
+      if (PadNav._getGamepad()) PadNav._mode = 'pad';
+    }
     // DOM 模态（玩法说明/对局记录/人机配置）打开：手柄控制模态按钮
     var domOv = PadNav._domOverlay();
     if (domOv) { PadNav._domPoll(domOv); return; }
     if (typeof FLY !== 'undefined' && FLY.busy) return;   // 飞行动画中：屏蔽输入
-    // 人机回合：由 AI 自动操作，忽略手柄输入
-    if (Screen.current === 'game' && G.game && G.game.phase !== 'end' && G.game.players[G.game.current].isAI) return;
+    // 人机回合：候选已被 _gameNavable 过滤为「暂停/查看」等可交互项，手柄仍可导航并确认暂停
     var gp = PadNav._getGamepad();
     if (!gp) return;
     if (PadNav._inputActive(gp)) PadNav._mode = 'pad';   // 手柄有输入 → 切「手柄模式」显示指示环
@@ -6510,11 +6525,12 @@ var PadNav = {
     var cands = PadNav._cands;
     var c = null;
     if (PadNav._cursor != null && cands && cands[PadNav._cursor]) c = cands[PadNav._cursor];
-    // 人机回合 / 未连接手柄 / 点击模式 / 无可选元素：隐藏指示环
+    // 终局 / 未连接手柄 / 点击模式 / 无可选元素：隐藏指示环。
+    // 人机回合不整体隐藏：候选已被 _gameNavable 过滤为「暂停/查看」等可交互项，指示环跟随光标显示
     var hide = !c;
     if (!hide && !PadNav._getGamepad()) hide = true;   // 无手柄连接时不显示导航环
     if (!hide && PadNav._mode !== 'pad') hide = true;  // 点击模式：不显示手柄圆圈指示（有手柄输入自动切回）
-    if (!hide && Screen.current === 'game' && G.game && (G.game.phase === 'end' || G.game.players[G.game.current].isAI)) hide = true;
+    if (!hide && Screen.current === 'game' && G.game && G.game.phase === 'end') hide = true;
     if (hide) {
       for (var h = 0; h < rings.length; h++) { if (rings[h]) rings[h].visible = false; }
       return;
