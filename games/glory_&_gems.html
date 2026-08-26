@@ -2537,7 +2537,12 @@ function computeLayout() {
   }
 
   // 水平预算不足时整体等比收缩（循环迭代到收敛，避免触及下限后仍超宽）
-  while (totalW > availW && (cardW > 24 || gemSize > 18 || nobleW > 22)) {
+  // 终止条件以 cardW 触底为准：cardW=24 时 cardH=round(24×1.42)=34，
+  // gemSize=round(34×0.5)=17→18、nobleW=round(34×0.75)=26 均已锁死；
+  // 旧条件里的 nobleW>22 在 cardW≥24 全区间恒为真（下限 22 实际不可达），
+  // 极窄舞台（如竖屏 + 50% 缩放 + 4 人）下 totalW>availW 永不解除 → 死循环卡死页面。
+  // cardW 是唯一缩放主变量，触底即停止（宁可超宽也不死循环）
+  while (totalW > availW && cardW > 24) {
     var k = availW / totalW;
     cardW = Math.max(24, Math.floor(cardW * k));
     cardH = Math.round(cardW * 1.42);
