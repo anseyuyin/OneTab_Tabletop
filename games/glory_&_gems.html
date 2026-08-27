@@ -1347,7 +1347,7 @@ function drawFacetedGem(ctx, cx, cy, r, P) {
 // 与工具完全一致的绘制顺序与混合方式：光照渐变/暗角/光泽/镜面高光 = source-over，
 // 颗粒纸纹 = overlay（中性灰≈128 不产生灰雾）；参数即工具导出的 JSON（见 OVERLAY_PARAMS）。
 var OVERLAY_PARAMS = {
-  dev:   { lightAngle: 33,  specular: 0.5, specularSize: 0.9, shadow: 0.25, vignette: 0.08, gloss: 0.03, noise: 0.3 },
+  dev:   { lightAngle: 33,  specular: 0.3, specularSize: 0.9, shadow: 0.25, vignette: 0.08, gloss: 0.03, noise: 0.2 },
   noble: { lightAngle: 44,  specular: 0.6, specularSize: 0.9, shadow: 0.2, vignette: 0.07, gloss: 0.06, noise: 0.3 }
 };
 function overlayClamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
@@ -2111,7 +2111,15 @@ function aoShadow(w, h, x, y, z, opts) {
     map: aoShadowTex(aspect), transparent: true, alphaTest: 0.01, depthWrite: false
   }));
   if (opts.opacity !== undefined) mesh.material.opacity = opts.opacity;
-  mesh.position.set(x, y - h * 0.1, (z === undefined ? 2 : z) - 1.0);
+  // rot：阴影随物件整体旋转（竖屏 3/4 人旋转模式）；下沉偏移方向同步旋转（-90° 时“下”指向 -x）
+  var dx = 0, dy = -h * 0.1;
+  if (opts.rot) {
+    mesh.rotation.z = opts.rot;
+    var tx0 = dx, ty0 = dy, cs = Math.cos(opts.rot), sn = Math.sin(opts.rot);
+    dx = tx0 * cs - ty0 * sn;
+    dy = tx0 * sn + ty0 * cs;
+  }
+  mesh.position.set(x + dx, y + dy, (z === undefined ? 2 : z) - 1.0);
   SceneRoot.root.add(mesh);
   return mesh;
 }
@@ -2209,6 +2217,7 @@ FLY.spawn = function (opts) {
   opts.arc = opts.arc || 0;
   var z = opts.z === undefined ? FLY._nextZ : opts.z;
   var mesh = flyMesh(opts.tex, opts.w, opts.h, opts.from.x, opts.from.y, z);
+  if (opts.rot) mesh.rotation.z = opts.rot;   // 飞行物朝向（竖屏 3/4 人旋转模式下跟随市场物品）
   mesh.scale.set(opts.fromScale, opts.fromScale, 1);
   FLY._flights.push({ opts: opts, mesh: mesh, t0: 0, started: false, z: z });
 };
@@ -2237,6 +2246,7 @@ FLY.card = function (card, back, from, to, w, h, opts) {
     dur: opts.dur || 540, delay: opts.delay || 0,
     arc: opts.arc !== undefined ? opts.arc : 28,
     fadeOut: opts.fadeOut !== undefined ? opts.fadeOut : false,
+    rot: opts.rot,   // 跟随目标位朝向（竖屏 3/4 人旋转模式下，飞向市场展示位的卡与静态卡朝向一致）
     onLand: opts.onLand,
   });
 };
@@ -2519,6 +2529,21 @@ function computeLayout() {
   var nobleH = Math.round(cardH * 0.9);
   var nobleW = nobleH;   // 正方形：高度与宽度一致（原为高/1.42 的竖版）
 
+  // 竖屏 3/4 人：中央市场区（发展卡 + 宝石资源 + 贵族卡 + 牌堆列）整体旋转 90°——
+  // 仅旋转摆放位置（各物品 mesh 不旋转，纹理保持正立可读），使市场由「横宽竖窄」变为
+  // 「竖宽横窄」，在竖屏下摆放更合适。旋转后：牌堆标签列 → 底部横排（3 级最左、1 级最右）；
+  // 发展卡 3 行 → 3 条竖列（4 张一列，3 级最左、1 级最右）；宝石银行/贵族卡竖列 → 顶部横排。
+  // 市场占用宽 = 原纵向跨度、占用高 = 原横向总宽。2 人局不旋转（保持现状）；横屏不旋转。
+  var gGap = 5;
+  var nGap = 5;
+  var rotMarket = portrait && n >= 3;
+  var marketSpan = function () {
+    var rowsH2 = cardH * 3 + rowGap * 2;
+    var gemsH2 = gemSize * 6 + gGap * 5;
+    var noblesH2 = nobleH * nt + nGap * (nt - 1);
+    return Math.max(rowsH2, gemsH2, noblesH2);
+  };
+
   // 水平：默认舞台全宽、内容居中，卡牌位置与底部座位完全一致；
   // 仅当左/右座位两侧留白不足以容纳操作栏（28 间距 + barH 厚度 + 6 间隙）时才避让收缩
   var mktL = sx, mktR = sx + sw;
@@ -2526,7 +2551,7 @@ function computeLayout() {
   var totalW = labelW + g1 + cardW * 4 + g1 * 3 + g1 * 2 + gemSize + g1 * 2 + nobleW;
   var availW = mktW - (portrait ? 10 : 18);
   if (curPos === 2 || curPos === 3) {
-    var contentW = Math.min(totalW, availW);          // 收缩到预算后的内容宽
+    var contentW = Math.min(rotMarket ? marketSpan() : totalW, availW);   // 收缩到预算后的内容宽（旋转模式按旋转后的占用宽判定）
     var margin = (mktW - contentW) / 2;               // 内容居中时单侧留白
     if (margin < 28 + barH + 6) {                     // 留白不足才避让
       if (curPos === 2) mktL = sx + 28 + barH + 6;    // 左侧操作栏：市场右移
@@ -2542,8 +2567,9 @@ function computeLayout() {
   // 旧条件里的 nobleW>22 在 cardW≥24 全区间恒为真（下限 22 实际不可达），
   // 极窄舞台（如竖屏 + 50% 缩放 + 4 人）下 totalW>availW 永不解除 → 死循环卡死页面。
   // cardW 是唯一缩放主变量，触底即停止（宁可超宽也不死循环）
-  while (totalW > availW && cardW > 24) {
-    var k = availW / totalW;
+  // 旋转模式下：旋转后的宽（marketSpan，原纵向跨度）与高（totalW，原横向总宽）都要不超预算
+  while ((rotMarket ? (marketSpan() > availW || totalW > mktH0) : (totalW > availW)) && cardW > 24) {
+    var k = rotMarket ? Math.min(availW / marketSpan(), mktH0 / totalW) : availW / totalW;
     cardW = Math.max(24, Math.floor(cardW * k));
     cardH = Math.round(cardW * 1.42);
     labelW = cardW;   // 牌堆矩形始终与发展卡同宽（随卡同步收缩）
@@ -2552,7 +2578,10 @@ function computeLayout() {
     nobleH = nobleW;   // 保持正方形（高度 = 宽度）
     totalW = labelW + g1 + cardW * 4 + g1 * 3 + g1 * 2 + gemSize + g1 * 2 + nobleW;
   }
-  var x0 = Math.max(mktL, mktL + (mktW - totalW) / 2);   // 市场左缘（窄屏时贴避让边界，不越过操作栏）
+  // 市场左缘。旋转模式下用「以当前水平区间中心为轴居中」的局部 x0（允许横向溢出——
+  // 该局部框仅作旋转前的中转：旋转后宽/高由下方预算约束，确保市场框以屏幕中心为轴正居中，
+  // 不会因局部内容超宽而整体纵向偏移）；非旋转模式保持原行为（窄屏时贴避让边界）
+  var x0 = rotMarket ? mktL + (mktW - totalW) / 2 : Math.max(mktL, mktL + (mktW - totalW) / 2);
   var labelX = x0 + labelW / 2;
   var cardsX0 = x0 + labelW + g1;
   var gemX = cardsX0 + cardW * 4 + g1 * 3 + g1 * 2 + gemSize / 2;
@@ -2571,18 +2600,68 @@ function computeLayout() {
   }
 
   // 宝石银行竖列（6 堆：白蓝绿红黑金，自上而下）
-  var gGap = 5;
   var gemsH = gemSize * 6 + gGap * 5;
   var gemTop = mktCY + gemsH / 2 - gemSize / 2;
   L.gems = { x: gemX, size: gemSize, ys: [] };
   for (var gi = 0; gi < 6; gi++) L.gems.ys.push(gemTop - gi * (gemSize + gGap));
 
   // 贵族卡竖列（居中）
-  var nGap = 5;
   var noblesH = nobleH * nt + nGap * (nt - 1);
   var nobleTop = mktCY + noblesH / 2 - nobleH / 2;
   L.nobles = { x: nobleX, w: nobleW, h: nobleH, ys: [] };
   for (var ni = 0; ni < nt; ni++) L.nobles.ys.push(nobleTop - ni * (nobleH + nGap));
+
+  // ---- 竖屏 3/4 人：中央市场区整体旋转 -90° ----
+  // 以市场中心 (mktCX, mktCY) 为轴、屏幕视角逆时针旋转（左→下、下→右、右→上、上→左）；
+  // 各物品 mesh 不旋转（纹理保持正立可读），仅摆放坐标旋转。
+  // 旋转中心 x 取当前水平区间 [mktL, mktR] 的中心，使旋转后的市场框整体居中且不越界；
+  // 旋转后市场框：宽 = marketSpan()（原纵向跨度）、高 = totalW（原横向总宽），中心仍为 (mktCX, mktCY)。
+  // 结构随之变化：cards[t] 由横排 { rowY, xs:[c] } 变为竖列 { colX, ys:[c] }；
+  // gems / nobles 由竖列 { x, ys:[i] } 变为横排 { y, xs:[i] }（读取统一走 marketCardPos 等辅助函数）。
+  // 牌堆标签为单点 { x, y }，直接旋转即可。
+  // 每个物品另存 rot = +90°：单个物品（发展卡/宝石/贵族/牌堆）的 mesh 与文字跟随整体同步旋转
+  //（刚体旋转，纹理朝向与摆放方向一致）；点击区/光圈经 hitTest/setGlow 的 rot 参数同步旋转。
+  if (rotMarket) {
+    var mrot = Math.PI / 2;
+    var mktCX = mktL + mktW / 2;
+    var rotX = function (px, py) { return mktCX - (py - mktCY); };
+    var rotY = function (px, py) { return mktCY + (px - mktCX); };
+    // 牌堆标签列 → 底部横排（原 1 级在下、3 级在上，旋转后 3 级最左、1 级最右）
+    for (var t2 = 1; t2 <= 3; t2++) {
+      var lb2 = L.deckLabels[t2];
+      var lbx2 = lb2.x, lby2 = lb2.y;
+      lb2.x = rotX(lbx2, lby2);
+      lb2.y = rotY(lbx2, lby2);
+      lb2.rot = mrot;
+    }
+    // 发展卡行 → 竖列（colX = 旋转后共享列中心 x，ys[c] = 各卡旋转后 y，原 3 级在上行、旋转后在最左列）
+    for (var t3 = 1; t3 <= 3; t3++) {
+      var row = L.cards[t3];
+      var rowY0 = row.rowY, xs0 = row.xs;
+      var colX = rotX(xs0[0], rowY0);
+      var ys3 = [];
+      for (var c3 = 0; c3 < xs0.length; c3++) ys3.push(rotY(xs0[c3], rowY0));
+      row.colX = colX; row.ys = ys3;
+      delete row.rowY; delete row.xs;
+      row.rot = mrot;
+    }
+    // 宝石银行竖列 → 顶部横排（各堆共享 y；原最上堆（白）旋转后在最左，索引对应关系不变）
+    var gx0 = L.gems.x, gys0 = L.gems.ys;
+    var gRowY = rotY(gx0, gys0[0]);
+    var gxs0 = [];
+    for (var gi2 = 0; gi2 < gys0.length; gi2++) gxs0.push(rotX(gx0, gys0[gi2]));
+    L.gems.y = gRowY; L.gems.xs = gxs0;
+    delete L.gems.x; delete L.gems.ys;
+    L.gems.rot = mrot;
+    // 贵族卡竖列 → 顶部横排（原最上卡旋转后在最左）
+    var nx0 = L.nobles.x, nys0 = L.nobles.ys;
+    var nRowY = rotY(nx0, nys0[0]);
+    var nxs0 = [];
+    for (var ni2 = 0; ni2 < nys0.length; ni2++) nxs0.push(rotX(nx0, nys0[ni2]));
+    L.nobles.y = nRowY; L.nobles.xs = nxs0;
+    delete L.nobles.x; delete L.nobles.ys;
+    L.nobles.rot = mrot;
+  }
 
   // 玩家面板区域（pos: 0底 1顶 2左 3右）—— 世界坐标（y 向上，x 居中于原点）
   // 2 人局顶部面板左移收窄，为左上角暂停按钮留位
@@ -2592,6 +2671,20 @@ function computeLayout() {
   L.panel.left = { x: -W / 2 + leftW / 2, y: H / 2 - (topH + sh / 2), w: leftW, h: sh };
   L.panel.right = { x: W / 2 - rightW / 2, y: H / 2 - (topH + sh / 2), w: rightW, h: sh };
   return L;
+}
+
+// 中央市场区坐标读取（兼容竖屏 3/4 人市场旋转 90° 模式）
+// 非旋转：cards[t]={ rowY, xs:[c] }（横排）、gems={ x, ys:[i] } / nobles={ x, ys:[i] }（竖列）
+// 旋转后：cards[t]={ colX, ys:[c] }（竖列）、gems={ y, xs:[i] } / nobles={ y, xs:[i] }（横排）
+function marketCardPos(t, c, L) {
+  var row = L.cards[t];
+  return row.ys ? { x: row.colX, y: row.ys[c] } : { x: row.xs[c], y: row.rowY };
+}
+function marketGemPos(i, L) {
+  return L.gems.xs ? { x: L.gems.xs[i], y: L.gems.y } : { x: L.gems.x, y: L.gems.ys[i] };
+}
+function marketNoblePos(i, L) {
+  return L.nobles.xs ? { x: L.nobles.xs[i], y: L.nobles.y } : { x: L.nobles.x, y: L.nobles.ys[i] };
 }
 
 // 玩家 i 的面板位置：0底 1顶 2左 3右（席位次序顺时针，从上方起）
@@ -4883,10 +4976,10 @@ function playActionAnimated(g, info, done) {
   }
   var toW = function (pt) { return panelContentToWorld(area, pos, pt.x, pt.y); };
   var deckPos = function (tier) { return { x: L.deckLabels[tier].x, y: L.deckLabels[tier].y }; };
-  var showPos = function (tier, col) { return { x: L.cards[tier].xs[col], y: L.cards[tier].rowY }; };
+  var showPos = function (tier, col) { return marketCardPos(tier, col, L); };
   var bankPos = function (colorKey) {
     var keys = COLORS.concat(['Y']);
-    return { x: L.gems.x, y: L.gems.ys[keys.indexOf(colorKey)] };
+    return marketGemPos(keys.indexOf(colorKey), L);
   };
   var sfxCoinDrop = function () { playSfx('coinDrop'); };   // 资源落地「磕嗒」
 
@@ -4935,12 +5028,13 @@ function playActionAnimated(g, info, done) {
         playSfx('whoosh');   // 背面起飞：「嗖」
         FLY.revealCard(info.card, from, revPos, toW(slot), L.cards[tier].w, L.cards[tier].h, { sfx: { flip: 'tap', fly2: 'whoosh' }, rot: revRot });
       } else {
-        FLY.card(info.card, false, from, toW(slot), L.cards[tier].w, L.cards[tier].h, { toScale: 0.5, fadeOut: true, dur: 560 });
+        // 飞行卡朝向跟随起飞位：市场展示位（旋转模式）→ 与市场物品一致；面板保留位 → 正立（0）
+        FLY.card(info.card, false, from, toW(slot), L.cards[tier].w, L.cards[tier].h, { toScale: 0.5, fadeOut: true, dur: 560, rot: info.fromReserved ? 0 : L.cards[tier].rot });
         playSfx('whoosh');   // 发展卡飞到玩家：「嗖」
       }
       if (!info.fromReserved && g.draw[tier] && g.draw[tier].length) {
         var nc = g.draw[tier][g.draw[tier].length - 1];   // 牌库顶（仅预览，状态变更时才真正弹出）
-        FLY.card(nc, false, deckPos(tier), showPos(tier, info.col), L.cards[tier].w, L.cards[tier].h, { delay: 170, dur: 500, arc: 18 });
+        FLY.card(nc, false, deckPos(tier), showPos(tier, info.col), L.cards[tier].w, L.cards[tier].h, { delay: 170, dur: 500, arc: 18, rot: L.cards[tier].rot });
         playSfx('whoosh', 0.17);   // 补牌从牌堆刷出：「嗖」（与飞行 delay 同步）
       }
       break;
@@ -4957,9 +5051,9 @@ function playActionAnimated(g, info, done) {
         var sh1 = GameScreen.cardShadows[tier2 + ':' + info.col];
         if (sh1) sh1.visible = false;   // 卡飞走后其落地阴影一并隐藏
       }
-      // 展示保留传真实卡（牌面飞行）；盲保留传占位（卡背飞行）
+      // 展示保留传真实卡（牌面飞行）；盲保留传占位（卡背飞行）；飞行卡朝向跟随市场（旋转模式）
       var resvCard = info.fromDraw ? { tier: tier2 } : tableCards(g, tier2, info.col);
-      FLY.card(resvCard, info.fromDraw, from2, toW(resvT), rs.w, rs.h, { dur: 560, arc: 26 });
+      FLY.card(resvCard, info.fromDraw, from2, toW(resvT), rs.w, rs.h, { dur: 560, arc: 26, rot: L.cards[tier2].rot });
       playSfx('whoosh');   // 保留卡飞向玩家：「嗖」
       // 黄金仅在「银行有黄金且手上未满 10」时发放（动画先于状态变更，直接以当前状态判定，与 execReserve 一致）
       if (g.gold > 0 && playerGemTotal(p) < GEM_TOTAL_MAX) {
@@ -4967,7 +5061,7 @@ function playActionAnimated(g, info, done) {
       }
       if (!info.fromDraw && g.draw[tier2] && g.draw[tier2].length) {
         var nc2 = g.draw[tier2][g.draw[tier2].length - 1];
-        FLY.card(nc2, false, deckPos(tier2), showPos(tier2, info.col), L.cards[tier2].w, L.cards[tier2].h, { delay: 260, dur: 500, arc: 16 });
+        FLY.card(nc2, false, deckPos(tier2), showPos(tier2, info.col), L.cards[tier2].w, L.cards[tier2].h, { delay: 260, dur: 500, arc: 16, rot: L.cards[tier2].rot });
         playSfx('whoosh', 0.26);   // 补牌从牌堆刷出：「嗖」（与飞行 delay 同步）
       }
       break;
@@ -4986,7 +5080,7 @@ function playNobleScoreAnim(g, nobleIdx, done) {
   var isHoriz = pos === 0 || pos === 1;
   var lay = panelContentLayout(p, isHoriz ? area.w : area.h, isHoriz ? area.h : area.w);
   var scoreW = panelContentToWorld(area, pos, lay.score.x, lay.score.y);
-  var nPos = { x: L.nobles.x, y: L.nobles.ys[nobleIdx] };
+  var nPos = marketNoblePos(nobleIdx, L);
   FLY.text('+3', nPos, scoreW, Math.min(26, Math.max(16, L.nobles.h * 0.9)), '#ffd94d', { dur: 720 });
   FLY.busy = true;
   FLY._done = done;
@@ -5131,13 +5225,14 @@ var GameScreen = {
     mkMesh(btnTex('暂停', pb.w, pb.h, { bg: 'rgba(40,48,66,0.92)', fg: '#dfe8f8', border: '#4a5874', key: 'pause' }), pb.w, pb.h, pb.x, pb.y, 3);
     addClickable('pause', pb.x, pb.y, pb.w, pb.h, 3);
 
-    // 贵族卡竖列
+    // 贵族卡竖列（旋转模式下为顶部横排，卡面随整体旋转 90°）
     for (var i = 0; i < g.nobles.length; i++) {
-      var ny = L.nobles.ys[i];
-      var m = mkMesh(nobleTex(g.nobles[i], L.nobles.w, L.nobles.h), L.nobles.w, L.nobles.h, L.nobles.x, ny, 2);
+      var np = marketNoblePos(i, L);
+      var m = mkMesh(nobleTex(g.nobles[i], L.nobles.w, L.nobles.h), L.nobles.w, L.nobles.h, np.x, np.y, 2);
+      if (L.nobles.rot) m.rotation.z = L.nobles.rot;
       this.nobleMeshes[i] = m;
-      this.nobleShadows[i] = aoShadow(L.nobles.w, L.nobles.h, L.nobles.x, ny, 2, { scale: 1.75, opacity: 0.9 });
-      addClickable('noble:' + i, L.nobles.x, ny, L.nobles.w, L.nobles.h, 2);
+      this.nobleShadows[i] = aoShadow(L.nobles.w, L.nobles.h, np.x, np.y, 2, { scale: 1.75, opacity: 0.9, rot: L.nobles.rot });
+      addClickable('noble:' + i, np.x, np.y, L.nobles.w, L.nobles.h, 2, L.nobles.rot);
     }
 
     // 牌区 + 牌堆列（牌堆矩形 = 与发展卡同尺寸的卡背：1-3 级不同颜色 + 罗马数字图形，数量 xN 在卡背下方）
@@ -5145,29 +5240,42 @@ var GameScreen = {
     for (var t = 1; t <= 3; t++) {
       var lb = L.deckLabels[t];
       this.deckMeshes[t] = mkMesh(cardBackTex(t, lb.w, lb.h), lb.w, lb.h, lb.x, lb.y, 1.6);
-      this.deckShadows[t] = aoShadow(lb.w, lb.h, lb.x, lb.y, 1.6);
-      this.deckLabelNums[t] = mkTextMesh('', lb.x, lb.y + lb.h * 0.18, Math.max(9, lb.w * 0.22), '#ffffff', { key: 'dl' + t, stroke: 'rgba(0,0,0,0.55)' });
-      addClickable('deck:' + t, lb.x, lb.y, lb.w, lb.h, 1.6);   // 保留模式：点击牌堆盲取 1 张
+      if (lb.rot) this.deckMeshes[t].rotation.z = lb.rot;
+      this.deckShadows[t] = aoShadow(lb.w, lb.h, lb.x, lb.y, 1.6, { rot: lb.rot });
+      // 数量 xN 随牌堆同步旋转：局部偏移 (0, +0.18h) 旋转 +90° → (-0.18h, 0)，文字亦转 +90°
+      var dnum = mkTextMesh('', lb.x, lb.y + lb.h * 0.18, Math.max(9, lb.w * 0.22), '#ffffff', { key: 'dl' + t, stroke: 'rgba(0,0,0,0.55)' });
+      if (lb.rot) { dnum.position.set(lb.x - lb.h * 0.18, lb.y, dnum.position.z); dnum.rotation.z = lb.rot; }
+      this.deckLabelNums[t] = dnum;
+      addClickable('deck:' + t, lb.x, lb.y, lb.w, lb.h, 1.6, lb.rot);   // 保留模式：点击牌堆盲取 1 张
       for (var c = 0; c < 4; c++) {
-        var x = L.cards[t].xs[c], y = L.cards[t].rowY;
+        var cp = marketCardPos(t, c, L);
+        var x = cp.x, y = cp.y;
         var card = tableCards(g, t, c);
-        this.cardMeshes[t + ':' + c] = card ? mkMesh(cardTex(card, L.cards[t].w, L.cards[t].h), L.cards[t].w, L.cards[t].h, x, y, 2) : null;
-        // 发展卡阴影增强：范围 1.95 倍、全浓度（配合共享贴图浓度上调）
-        this.cardShadows[t + ':' + c] = card ? aoShadow(L.cards[t].w, L.cards[t].h, x, y, 2, { scale: 1.95 }) : null;
-        addClickable('card:' + t + ':' + c, x, y, L.cards[t].w, L.cards[t].h, 2);
+        var cm = card ? mkMesh(cardTex(card, L.cards[t].w, L.cards[t].h), L.cards[t].w, L.cards[t].h, x, y, 2) : null;
+        if (cm && L.cards[t].rot) cm.rotation.z = L.cards[t].rot;
+        this.cardMeshes[t + ':' + c] = cm;
+        // 发展卡阴影增强：范围 1.95 倍、全浓度（配合共享贴图浓度上调）；随卡整体旋转
+        this.cardShadows[t + ':' + c] = card ? aoShadow(L.cards[t].w, L.cards[t].h, x, y, 2, { scale: 1.95, rot: L.cards[t].rot }) : null;
+        addClickable('card:' + t + ':' + c, x, y, L.cards[t].w, L.cards[t].h, 2, L.cards[t].rot);
       }
     }
 
-    // 宝石银行竖列
+    // 宝石银行竖列（旋转模式下为顶部横排，圆片与数量文字随整体旋转 90°）
     var keys = COLORS.concat(['Y']);
     for (var gi = 0; gi < keys.length; gi++) {
       var k = keys[gi];
-      var gy = L.gems.ys[gi];
-      var pile = gemPileGroup('gem:' + k, k, L.gems.x, gy, L.gems.size, 2);
+      var gp = marketGemPos(gi, L);
+      var pile = gemPileGroup('gem:' + k, k, gp.x, gp.y, L.gems.size, 2);
+      if (L.gems.rot) {
+        pile.mesh.rotation.z = L.gems.rot;   // 圆片旋转（图案/高光朝向与整体一致）
+        // 数量文字局部偏移 (0, +0.02·size) 旋转 +90° → (-0.02·size, 0)，文字亦转 +90°
+        pile.num.position.set(gp.x - L.gems.size * 0.02, gp.y, pile.num.position.z);
+        pile.num.rotation.z = L.gems.rot;
+      }
       this.gemPiles[k] = pile;
-      // 资源堆小而密：阴影范围 1.4 倍、浓度 0.7，既比发展卡轻、又保留可见的落地阴影
-      this.gemShadows[k] = aoShadow(L.gems.size, L.gems.size, L.gems.x, gy, 2, { scale: 1.4, opacity: 0.7 });
-      addClickable('gem:' + k, L.gems.x, gy, L.gems.size + 6, L.gems.size + 6, 2);
+      // 资源堆小而密：阴影范围 1.4 倍、浓度 0.7，既比发展卡轻、又保留可见的落地阴影（圆形，无需旋转）
+      this.gemShadows[k] = aoShadow(L.gems.size, L.gems.size, gp.x, gp.y, 2, { scale: 1.4, opacity: 0.7 });
+      addClickable('gem:' + k, gp.x, gp.y, L.gems.size + 6, L.gems.size + 6, 2);
     }
 
     // 操作栏按钮（跟随当前玩家座位旋转）
@@ -5209,10 +5317,11 @@ var GameScreen = {
           if (dsh2) dsh2.visible = false;   // 飞行动画期间隐藏落地阴影，落地瞬间恢复
           FLY.card(dealCard, false,
             { x: Ld.deckLabels[t2].x, y: Ld.deckLabels[t2].y },
-            { x: Ld.cards[t2].xs[c2], y: Ld.cards[t2].rowY },
+            marketCardPos(t2, c2, Ld),
             Ld.cards[t2].w, Ld.cards[t2].h,
             {
               delay: seq * 100, dur: 700, arc: 20,
+              rot: Ld.cards[t2].rot,   // 飞行卡跟随市场展示位朝向（旋转模式下与静态卡一致）
               onLand: (function (k) {
                 return function () {
                   var mk = GameScreen.cardMeshes[k];
@@ -5384,7 +5493,8 @@ var GameScreen = {
       var k = keys[i];
       var n = k === 'Y' ? g.gold : g.bank[k];
       var pile = this.gemPiles[k];
-      if (pile) updateTextMesh(pile.num, '' + n, L.gems.x, L.gems.ys[i] + L.gems.size * 0.02, Math.max(9, L.gems.size * 0.34), '#fff', { key: 'n' + k, stroke: 'rgba(0,0,0,0.55)' });
+      var gp = marketGemPos(i, L);
+      if (pile) updateTextMesh(pile.num, '' + n, gp.x, gp.y + L.gems.size * 0.02, Math.max(9, L.gems.size * 0.34), '#fff', { key: 'n' + k, stroke: 'rgba(0,0,0,0.55)' });
     }
 
     // 牌区 + 牌堆计数（xN 在卡背内罗马数字下方，白色描边以适配彩色卡背）
@@ -5395,12 +5505,14 @@ var GameScreen = {
       for (var c = 0; c < 4; c++) {
         var card = tableCards(g, t, c);
         var key = t + ':' + c;
-        var x = L.cards[t].xs[c], y = L.cards[t].rowY;
+        var cp = marketCardPos(t, c, L);
+        var x = cp.x, y = cp.y;
         var m = this.cardMeshes[key];
         if (card && !m) {
           m = mkMesh(cardTex(card, L.cards[t].w, L.cards[t].h), L.cards[t].w, L.cards[t].h, x, y, 2);
+          if (L.cards[t].rot) m.rotation.z = L.cards[t].rot;
           this.cardMeshes[key] = m;
-          this.cardShadows[key] = aoShadow(L.cards[t].w, L.cards[t].h, x, y, 2, { scale: 1.95 });
+          this.cardShadows[key] = aoShadow(L.cards[t].w, L.cards[t].h, x, y, 2, { scale: 1.95, rot: L.cards[t].rot });
         } else if (!card && m) {
           SceneRoot.root.remove(m);
           disposeGroup(m); // 释放已购牌的 geometry/material
@@ -5499,7 +5611,8 @@ var GameScreen = {
     for (var i = 0; i < 6; i++) {
       var k = keys[i];
       var key = 'gem:' + k;
-      var gx = L.gems.x, gy = L.gems.ys[i], gs = L.gems.size;
+      var gp2 = marketGemPos(i, L);
+      var gx = gp2.x, gy = gp2.y, gs = L.gems.size;
       var sel = UI.selected.indexOf(key) >= 0;
       var canPickMore = UI.mode !== 'take3' || UI.selected.length < take3MaxPick(g, p);
       if (UI.mode === 'take3' || UI.mode === 'take2') {
@@ -5512,10 +5625,11 @@ var GameScreen = {
     for (var t = 1; t <= 3; t++) {
       for (var c = 0; c < 4; c++) {
         var key2 = 'card:' + t + ':' + c;
-        var x = L.cards[t].xs[c], y = L.cards[t].rowY, w = L.cards[t].w, h = L.cards[t].h;
+        var cp2 = marketCardPos(t, c, L);
+        var x = cp2.x, y = cp2.y, w = L.cards[t].w, h = L.cards[t].h;
         var sel2 = UI.selected.indexOf(key2) >= 0;
         if ((UI.mode === 'buy' || UI.mode === 'reserve') && uiIsSelectable(g, key2)) {
-          setGlow('c' + t + c, sel2 ? 'blue' : 'green', x, y, w, h, 2.6);
+          setGlow('c' + t + c, sel2 ? 'blue' : 'green', x, y, w, h, 2.6, L.cards[t].rot);
         } else setGlow('c' + t + c, null);
       }
     }
@@ -5524,7 +5638,7 @@ var GameScreen = {
       var key3 = 'deck:' + t3;
       var lb3 = L.deckLabels[t3];
       if (UI.mode === 'reserve' && uiIsSelectable(g, key3)) {
-        setGlow('d' + t3, UI.selected.indexOf(key3) >= 0 ? 'blue' : 'green', lb3.x, lb3.y, lb3.w, lb3.h, 2.1);
+        setGlow('d' + t3, UI.selected.indexOf(key3) >= 0 ? 'blue' : 'green', lb3.x, lb3.y, lb3.w, lb3.h, 2.1, lb3.rot);
       } else setGlow('d' + t3, null);
     }
     // 面板内保留牌光圈：先全清，再按购买模式给当前玩家可买的牌加光圈
@@ -5550,8 +5664,9 @@ var GameScreen = {
     // 贵族选择阶段：候选卡绿色发光提示（点选即获得，无需选中态）
     if (g.phase === 'noble-choice') {
       g.nobleChoices.forEach(function (idx) {
-        var x = L.nobles.x, y = L.nobles.ys[idx], w = L.nobles.w, h = L.nobles.h;
-        setGlow('nb' + idx, 'green', x, y, w, h, 2.6);
+        var np2 = marketNoblePos(idx, L);
+        var x = np2.x, y = np2.y, w = L.nobles.w, h = L.nobles.h;
+        setGlow('nb' + idx, 'green', x, y, w, h, 2.6, L.nobles.rot);
       });
     } else {
       g.nobles.forEach(function (n, i) { setGlow('nb' + i, null); });
