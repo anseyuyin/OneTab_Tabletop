@@ -29,7 +29,7 @@
 
 ## 游戏目录 Games
 
-当前收录：**1 款成品** + **1 款设计中**。
+当前收录：**2 款成品** + **1 款设计中**。
 
 ### 📋 游戏菜单 Game Menu
 
@@ -47,6 +47,17 @@
 - **四边坐席**：上 / 下 / 左 / 右四个玩家面板，文字分别朝向各坐席玩家（下方正立、上方倒置、左右侧转）。
 - **触屏交互**：点击 + 文本提示 + 按钮执行，可选目标边缘发光（绿 = 可选，蓝 = 已选中）。
 - **附加功能**：人机对战（AI 对手）、对局记录回看、音效与动画表现、内置玩法说明。
+
+### ✅ 中国象棋 3D Chinese Chess
+
+> `games/chinese_chess.html`（约 710 KiB，单文件）
+
+1~2 人同设备的真 3D 中国象棋：透视相机、实时光照阴影、PBR 木质棋盘与车削立体棋子，支持人机四档难度与同机双人对弈。
+
+- **完整规则**：蹩马腿 / 塞象眼 / 炮架 / 将帅照面 / 送将拦截；将死、困毙判负；三次重复与长将判负、60 回合自然限着。
+- **真 3D 场景**：`LatheGeometry` 立体棋子 + PCF 软阴影 + 程序化木纹纹理，竖屏自动放大 FOV 占满高度。
+- **四档 AI**：手写 Alpha-Beta + 静态搜索 + 置换表 + 迭代加深限时，逐层让帧不卡顿（简单 / 普通 / 困难 / 大师）。
+- **对局体验**：中文纵线记谱面板、选中高亮与合法落点、吃子动画、悔棋 / 提示 / 认输 / 暂停、断点续局、50 条对局记录与逐步回放、手柄键盘导航。
 
 ### 🚧 灵石争锋 Spirit Stone Clash（设计中）
 
@@ -67,6 +78,7 @@ games/game_index.html
 
 # 或直接双击任意单文件游戏游玩
 games/glory_&_gems.html
+games/chinese_chess.html
 ```
 
 无需任何依赖与配置，浏览器打开即可。
@@ -79,20 +91,30 @@ games/glory_&_gems.html
 OneTab_Tabletop/
 ├── games/                      # 已实现的单文件游戏
 │   ├── game_index.html         # 游戏菜单（所有游戏的统一入口）
-│   └── glory_&_gems.html       # 《荣光宝石商》单文件成品
+│   ├── glory_&_gems.html       # 《荣光宝石商》单文件成品
+│   └── chinese_chess.html      # 《中国象棋 3D》单文件成品
 ├── docs/                       # 设计文档
 │   ├── glory_&_gems/           # 《荣光宝石商》概念设计与规则说明
 │   │   ├── conceptual design.md
 │   │   ├── advanced_strategy.md        # 进阶对弈策略（含四档难度说明）
 │   │   └── ai_lookahead_design.md      # AI 前瞻设计文档（含 MCTS 原型记录）
+│   ├── chinese_chess/          # 《中国象棋 3D》概念设计与实现提示词
+│   │   ├── conceptual design.md
+│   │   └── implementation_prompt.md
 │   └── spirit_stone_clash/     # 《灵石争锋》概念设计
 │       └── conceptual design.md
+├── tests/                      # Node 单测（规则内核提取自单文件）
+│   ├── seat_colors.test.js
+│   ├── ai_difficulty.test.js
+│   └── chinese_chess_rules.test.js
 ├── tools/                      # 单文件辅助工具（零依赖）
 │   ├── image-base64-converter.html  # 图片 ⇄ Base64 互转（拖拽批量 / JSON 批量加载）
 │   ├── card-overlay-generator.html  # 卡牌质感覆盖层生成器
 │   └── gemstone-cut-generator.html  # 宝石切面生成器
 ├── dev/                        # 开发工具与实验原型
-│   └── mcts_splendor.js        # MCTS 独立原型（Node 脚本，复用主游戏规则引擎）
+│   ├── mcts_splendor.js        # MCTS 独立原型（Node 脚本，复用主游戏规则引擎）
+│   ├── check_single_file.js    # 单文件校验（语法 / 外链负面清单 / 体积）
+│   └── smoke_chinese_chess.js  # 《中国象棋 3D》端到端冒烟（playwright-core + 本机 Chrome）
 ├── LICENSE                     # MIT License
 └── README.md
 ```
@@ -108,6 +130,7 @@ OneTab_Tabletop/
 - `docs/glory_&_gems/conceptual design.md` — 《荣光宝石商》
 - `docs/glory_&_gems/advanced_strategy.md` — 进阶对弈策略（含四档难度说明）
 - `docs/glory_&_gems/ai_lookahead_design.md` — AI 前瞻设计文档（贪心调优 / 1步前瞻 / MCTS 原型的完整实验记录）
+- `docs/chinese_chess/conceptual design.md` — 《中国象棋 3D》
 - `docs/spirit_stone_clash/conceptual design.md` — 《灵石争锋》
 
 ### 实验原型（不阻塞主游戏）

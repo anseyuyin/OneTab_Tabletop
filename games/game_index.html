@@ -217,6 +217,16 @@ var GAMES = [
     theme: "glory"
   },
   {
+    id: "chinese_chess",
+    file: "chinese_chess.html",
+    name: "中国象棋 3D",
+    nameEn: "Chinese Chess 3D",
+    desc: "真 3D 中国象棋：光影木质棋盘与立体棋子，完整规则与中文记谱，1~2 人同机对弈，内置四档人机 AI（简单 / 普通 / 困难 / 大师），支持续局与对局回放。",
+    tags: ["1-2人", "回合制", "策略", "有AI", "3D"],
+    status: "ready",
+    theme: "chess"
+  },
+  {
     id: "spirit_stone_clash",
     file: null,
     name: "灵石争锋",
@@ -434,8 +444,87 @@ function drawSpiritPreview(canvas, w, h) {
   ctx.fillRect(w * 0.08, h - 3, w * 0.84, 1.5);
 }
 
+function drawChessPreview(canvas, w, h) {
+  var ctx = canvas.getContext("2d");
+  /* 背景：墨黑 + 暖木光晕（与游戏加载页氛围一致） */
+  ctx.fillStyle = "#141210";
+  ctx.fillRect(0, 0, w, h);
+  var top = ctx.createRadialGradient(w * 0.5, h * 0.0, 0, w * 0.5, h * 0.0, w * 0.6);
+  top.addColorStop(0, "rgba(232,195,122,0.22)"); top.addColorStop(1, "rgba(232,195,122,0)");
+  ctx.fillStyle = top; ctx.fillRect(0, 0, w, h);
+  var rb = ctx.createRadialGradient(w * 0.98, h * 1.05, 0, w * 0.98, h * 1.05, w * 0.5);
+  rb.addColorStop(0, "rgba(122,42,30,0.30)"); rb.addColorStop(1, "rgba(122,42,30,0)");
+  ctx.fillStyle = rb; ctx.fillRect(0, 0, w, h);
+  paintParticles(ctx, w, h, 33, 20, "rgba(232,195,122,1)", 1.4);
+
+  /* 迷你棋盘：木纹面 + 格线 + 河界 */
+  var bw = w * 0.34, bh = bw * 1.05, bx = w * 0.5 - bw / 2, by = h * 0.10;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 14; ctx.shadowOffsetY = 6;
+  ctx.fillStyle = "#d9b076";
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.restore();
+  ctx.strokeStyle = "rgba(42,26,12,.9)";
+  ctx.lineWidth = 1;
+  var i;
+  for (i = 0; i <= 8; i++) {
+    var gx = bx + (bw * i) / 8;
+    ctx.beginPath(); ctx.moveTo(gx, by); ctx.lineTo(gx, by + bh * 0.45); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gx, by + bh * 0.55); ctx.lineTo(gx, by + bh); ctx.stroke();
+  }
+  for (i = 0; i <= 9; i++) {
+    var gz = by + (bh * i) / 10 + bh * 0.0;
+    ctx.beginPath(); ctx.moveTo(bx, by + (bh * i) / 10); ctx.lineTo(bx + bw, by + (bh * i) / 10); ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(74,46,18,.9)";
+  ctx.font = "700 " + Math.max(8, bh * 0.075) + 'px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("楚河      汉界", bx + bw / 2, by + bh * 0.5);
+
+  /* 立体棋子：径向渐变圆饼 + 阴刻字 */
+  function chessPiece(cx, cy, r, ch, red) {
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = r * 0.7; ctx.shadowOffsetY = r * 0.28;
+    var g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.15, cx, cy, r);
+    if (red) { g.addColorStop(0, "#d84a3a"); g.addColorStop(0.65, "#b3241c"); g.addColorStop(1, "#7c150f"); }
+    else { g.addColorStop(0, "#3d3d3d"); g.addColorStop(0.65, "#1d1d1d"); g.addColorStop(1, "#000"); }
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = "rgba(245,238,220,.9)"; ctx.lineWidth = Math.max(1.2, r * 0.12);
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.88, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = "#f6e8d8";
+    ctx.font = "700 " + r * 1.05 + 'px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.fillText(ch, cx, cy + r * 0.04);
+    ctx.restore();
+  }
+  var pr = Math.min(w, h) * 0.075;
+  chessPiece(bx + bw * 0.22, by + bh * 0.24, pr, "车", false);
+  chessPiece(bx + bw * 0.5, by + bh * 0.76, pr * 1.1, "炮", true);
+  chessPiece(bx + bw * 0.78, by + bh * 0.24, pr, "马", false);
+
+  /* 标题 */
+  var titleSize = Math.max(15, Math.min(h * 0.19, 30));
+  var titleY = h * 0.845;
+  var tg = ctx.createLinearGradient(0, titleY - titleSize, 0, titleY);
+  tg.addColorStop(0, "#fbeec2"); tg.addColorStop(0.55, "#e8c37a"); tg.addColorStop(1, "#c99a4a");
+  ctx.save();
+  ctx.shadowColor = "rgba(232,195,122,.45)"; ctx.shadowBlur = titleSize * 0.4;
+  ctx.font = "700 " + titleSize + 'px "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif';
+  ctx.fillStyle = tg;
+  ctx.fillText("中国象棋 3D", w * 0.5, titleY);
+  ctx.restore();
+  /* 底部金线 */
+  var lg = ctx.createLinearGradient(0, 0, w, 0);
+  lg.addColorStop(0, "rgba(232,195,122,0)"); lg.addColorStop(0.16, "rgba(232,195,122,.9)");
+  lg.addColorStop(0.84, "rgba(232,195,122,.9)"); lg.addColorStop(1, "rgba(232,195,122,0)");
+  ctx.fillStyle = lg;
+  ctx.fillRect(w * 0.10, h - 3, w * 0.80, 1.6);
+}
+
 function drawPreview(canvas, theme, w, h) {
   if (theme === "spirit") drawSpiritPreview(canvas, w, h);
+  else if (theme === "chess") drawChessPreview(canvas, w, h);
   else drawGloryPreview(canvas, w, h);
 }
 
