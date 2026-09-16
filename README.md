@@ -29,7 +29,7 @@
 
 ## 游戏目录 Games
 
-当前收录：**2 款成品** + **1 款设计中**。
+当前收录：**3 款成品** + **1 款设计中**。
 
 ### 📋 游戏菜单 Game Menu
 
@@ -59,6 +59,18 @@
 - **四档 AI**：手写 Alpha-Beta + 静态搜索 + 置换表 + 迭代加深限时，逐层让帧不卡顿（简单 / 普通 / 困难 / 大师）。
 - **对局体验**：中文纵线记谱面板、选中高亮与合法落点、吃子动画、悔棋 / 提示 / 认输 / 暂停、断点续局、50 条对局记录与逐步回放、手柄键盘导航。
 
+### ✅ 围棋 3D Weiqi / Go
+
+> `games/weiqi.html`（约 720 KiB，单文件）
+
+1~2 人同设备的真 3D 围棋：中式竹林庭院里青石石桌承托木盘，蛤贝白子与那智黑石正俯视角对弈，9 / 13 / 19 路任选，支持让子、贴目与人机四档难度。
+
+- **完整规则**：气与连通块提子、禁入点（自杀）、打劫（Zobrist 全局同形禁着 superko）、停一手、中国规则数子法结算（死子标记双方确认、公气中立、贴目参与胜负）。
+- **真 3D 场景**：`LatheGeometry` 双凸透镜棋子（InstancedMesh 实例化渲染 361 子）+ 程序化青石石桌 / 木盘 / 棋笥 / 石板地面 / 实例化竹林 + PCF 软阴影，正俯视角下双指捏合（或滚轮）缩放、双击复位，取景按 UI 留白自适应。
+- **四档 AI**：手写候选点启发 + 真眼检测 + 轻量 MCTS（UCB1 + 分片让帧，单着 ≤ 1.3 s 不卡顿），自动停一手与认输，开局书与微随机避免千局一面；9 路中坚档可稳定战胜初学者。
+- **对局体验**：幽灵子预览与合法提示、最后一手朱红标记、打劫脉冲提示、提子飞子动画、形势判断估算、手数数字片（最近 80 手）、棋谱面板与逐步回放、数子面板实时目数、断点续局、50 条对局记录、手柄键盘导航。
+- **画质三档**：低（渲染倍率 1.25× / 1024 硬阴影 / 精简远景，省电流畅）、中（1.6× / 2048 软阴影，默认均衡）、高（2× / 软阴影 / 完整细节），首次运行按设备自动选档，对局中切换不丢子。
+
 ### 🚧 灵石争锋 Spirit Stone Clash（设计中）
 
 > 设计文档：`docs/spirit_stone_clash/conceptual design.md`
@@ -79,6 +91,7 @@ games/game_index.html
 # 或直接双击任意单文件游戏游玩
 games/glory_&_gems.html
 games/chinese_chess.html
+games/weiqi.html
 ```
 
 无需任何依赖与配置，浏览器打开即可。
@@ -92,7 +105,8 @@ OneTab_Tabletop/
 ├── games/                      # 已实现的单文件游戏
 │   ├── game_index.html         # 游戏菜单（所有游戏的统一入口）
 │   ├── glory_&_gems.html       # 《荣光宝石商》单文件成品
-│   └── chinese_chess.html      # 《中国象棋 3D》单文件成品
+│   ├── chinese_chess.html      # 《中国象棋 3D》单文件成品
+│   └── weiqi.html              # 《围棋 3D》单文件成品
 ├── docs/                       # 设计文档
 │   ├── glory_&_gems/           # 《荣光宝石商》概念设计与规则说明
 │   │   ├── conceptual design.md
@@ -101,12 +115,16 @@ OneTab_Tabletop/
 │   ├── chinese_chess/          # 《中国象棋 3D》概念设计与实现提示词
 │   │   ├── conceptual design.md
 │   │   └── implementation_prompt.md
+│   ├── weiqi/                  # 《围棋 3D》概念设计与实现提示词
+│   │   ├── conceptual design.md
+│   │   └── implementation_prompt.md
 │   └── spirit_stone_clash/     # 《灵石争锋》概念设计
 │       └── conceptual design.md
 ├── tests/                      # Node 单测（规则内核提取自单文件）
 │   ├── seat_colors.test.js
 │   ├── ai_difficulty.test.js
-│   └── chinese_chess_rules.test.js
+│   ├── chinese_chess_rules.test.js
+│   └── weiqi_rules.test.js
 ├── tools/                      # 单文件辅助工具（零依赖）
 │   ├── image-base64-converter.html  # 图片 ⇄ Base64 互转（拖拽批量 / JSON 批量加载）
 │   ├── card-overlay-generator.html  # 卡牌质感覆盖层生成器
@@ -114,7 +132,10 @@ OneTab_Tabletop/
 ├── dev/                        # 开发工具与实验原型
 │   ├── mcts_splendor.js        # MCTS 独立原型（Node 脚本，复用主游戏规则引擎）
 │   ├── check_single_file.js    # 单文件校验（语法 / 外链负面清单 / 体积）
-│   └── smoke_chinese_chess.js  # 《中国象棋 3D》端到端冒烟（playwright-core + 本机 Chrome）
+│   ├── smoke_chinese_chess.js  # 《中国象棋 3D》端到端冒烟（playwright-core + 本机 Chrome）
+│   ├── smoke_weiqi.js          # 《围棋 3D》端到端冒烟（playwright-core + 本机 Chrome）
+│   ├── quality_weiqi.js        # 《围棋 3D》画质档位校验（三档参数与对局中切换不丢子）
+│   └── ai_weiqi_check.js       # 《围棋 3D》AI 校验（MCTS 耗时 / 合法性 / 自对弈终局）
 ├── LICENSE                     # MIT License
 └── README.md
 ```
@@ -131,6 +152,7 @@ OneTab_Tabletop/
 - `docs/glory_&_gems/advanced_strategy.md` — 进阶对弈策略（含四档难度说明）
 - `docs/glory_&_gems/ai_lookahead_design.md` — AI 前瞻设计文档（贪心调优 / 1步前瞻 / MCTS 原型的完整实验记录）
 - `docs/chinese_chess/conceptual design.md` — 《中国象棋 3D》
+- `docs/weiqi/conceptual design.md` — 《围棋 3D》
 - `docs/spirit_stone_clash/conceptual design.md` — 《灵石争锋》
 
 ### 实验原型（不阻塞主游戏）

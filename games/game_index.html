@@ -227,6 +227,16 @@ var GAMES = [
     theme: "chess"
   },
   {
+    id: "weiqi",
+    file: "weiqi.html",
+    name: "围棋 3D",
+    nameEn: "Weiqi / Go 3D",
+    desc: "和室暖光下的真 3D 围棋：9 / 13 / 19 路任选，气与提子、打劫、中国规则数子完整实现，可让子可设贴目，单人对抗四档 AI 或双人同机对弈，支持死子标记、续局与棋谱回放。",
+    tags: ["1-2人", "回合制", "策略", "有AI", "3D"],
+    status: "ready",
+    theme: "go"
+  },
+  {
     id: "spirit_stone_clash",
     file: null,
     name: "灵石争锋",
@@ -522,9 +532,363 @@ function drawChessPreview(canvas, w, h) {
   ctx.fillRect(w * 0.10, h - 3, w * 0.80, 1.6);
 }
 
+/* 围棋 3D：夜色竹林庭院中石桌上的对局特写（程序化绘制，呼应游戏内 3D 场景） */
+function drawGoPreview(canvas, w, h) {
+  var ctx = canvas.getContext("2d");
+  var rng = makeRng(913);
+  var i;
+
+  /* ---------- 背景：竹青夜色 + 石灯笼暖光 + 顶部天光 ---------- */
+  var bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#182620");
+  bg.addColorStop(0.55, "#111b16");
+  bg.addColorStop(1, "#0a110d");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+  var glowLamp = ctx.createRadialGradient(w * 0.88, h * 0.9, 0, w * 0.88, h * 0.9, w * 0.62);
+  glowLamp.addColorStop(0, "rgba(255,198,120,0.22)");
+  glowLamp.addColorStop(1, "rgba(255,198,120,0)");
+  ctx.fillStyle = glowLamp;
+  ctx.fillRect(0, 0, w, h);
+  var glowSky = ctx.createRadialGradient(w * 0.16, -h * 0.2, 0, w * 0.16, -h * 0.2, w * 0.62);
+  glowSky.addColorStop(0, "rgba(180,216,168,0.18)");
+  glowSky.addColorStop(1, "rgba(180,216,168,0)");
+  ctx.fillStyle = glowSky;
+  ctx.fillRect(0, 0, w, h);
+  paintParticles(ctx, w, h, 91, 24, "rgba(208,228,188,1)", 1.2);
+
+  /* ---------- 两侧竹丛剪影（竹竿 + 竹节 + 竹叶） ---------- */
+  function leaf(x, y, len, ang, tone) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ang);
+    var g = ctx.createLinearGradient(0, 0, len, 0);
+    g.addColorStop(0, "rgba(54,92,50," + tone + ")");
+    g.addColorStop(1, "rgba(104,156,84," + tone * 0.85 + ")");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(len * 0.45, -len * 0.17, len, -len * 0.02);
+    ctx.quadraticCurveTo(len * 0.45, len * 0.13, 0, 0);
+    ctx.fill();
+    ctx.restore();
+  }
+  function bamboo(side) {
+    for (var s = 0; s < 4; s++) {
+      var x = side < 0 ? 9 + s * 15 + rng() * 6 : w - 9 - s * 15 - rng() * 6;
+      var stalkW = 5 + rng() * 3.5;
+      var topY = -6 - rng() * 12;
+      var hgt = h * (0.8 + rng() * 0.5);
+      var tone = 0.34 + rng() * 0.3;
+      var g = ctx.createLinearGradient(x - stalkW / 2, 0, x + stalkW / 2, 0);
+      g.addColorStop(0, "rgba(30,52,32," + tone + ")");
+      g.addColorStop(0.42, "rgba(88,134,74," + Math.min(0.92, tone + 0.16) + ")");
+      g.addColorStop(1, "rgba(22,40,26," + tone + ")");
+      ctx.fillStyle = g;
+      ctx.fillRect(x - stalkW / 2, topY, stalkW, hgt);
+      ctx.strokeStyle = "rgba(16,30,18,0.42)";
+      ctx.lineWidth = 1;
+      for (var k = 1; k * 13 < hgt; k++) {
+        ctx.beginPath();
+        ctx.moveTo(x - stalkW / 2, topY + k * 13);
+        ctx.lineTo(x + stalkW / 2, topY + k * 13);
+        ctx.stroke();
+      }
+      var ly = topY + hgt * (0.3 + rng() * 0.42);
+      for (var m = 0; m < 3; m++) {
+        leaf(x + (rng() - 0.5) * 4, ly + m * 9 + rng() * 6, 14 + rng() * 12,
+          (side < 0 ? -0.62 : Math.PI + 0.62) + (rng() - 0.5) * 0.8, 0.5 + rng() * 0.3);
+      }
+    }
+  }
+  bamboo(-1);
+  bamboo(1);
+
+  /* ---------- 石板地面暗示 ---------- */
+  ctx.strokeStyle = "rgba(104,114,100,0.20)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h * 0.72); ctx.lineTo(w, h * 0.72);
+  ctx.moveTo(w * 0.33, h * 0.72); ctx.lineTo(w * 0.33, h);
+  ctx.moveTo(w * 0.69, h * 0.72); ctx.lineTo(w * 0.69, h);
+  ctx.stroke();
+
+  /* ---------- 石桌 ---------- */
+  var bs = Math.min(h * 0.46, w * 0.28);         // 棋盘边长
+  var pad = bs * 0.26;                            // 石桌露边（右侧留出棋笥位）
+  var bx = Math.round(w * 0.5 - bs / 2 - pad * 0.55);
+  var by = Math.round(pad + 2);
+  var tx = bx - pad, ts = bs + pad * 2;
+  /* 台柱与接地柔影 */
+  ctx.fillStyle = "#5f655d";
+  ctx.fillRect(tx + ts * 0.14, by + bs + pad * 0.35, ts * 0.72, h * 0.07);
+  var cs = ctx.createRadialGradient(tx + ts / 2, by + bs + h * 0.07, 2, tx + ts / 2, by + bs + h * 0.07, ts * 0.66);
+  cs.addColorStop(0, "rgba(6,10,7,0.46)");
+  cs.addColorStop(1, "rgba(6,10,7,0)");
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(tx + ts / 2, by + bs + h * 0.075, ts * 0.62, h * 0.08, 0, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.fillStyle = cs;
+  ctx.fill();
+  ctx.restore();
+  /* 桌面 */
+  function roundRect(x, y, ww, hh, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + ww - r, y);
+    ctx.quadraticCurveTo(x + ww, y, x + ww, y + r);
+    ctx.lineTo(x + ww, y + hh - r);
+    ctx.quadraticCurveTo(x + ww, y + hh, x + ww - r, y + hh);
+    ctx.lineTo(x + r, y + hh);
+    ctx.quadraticCurveTo(x, y + hh, x, y + hh - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  var stg = ctx.createLinearGradient(tx, by, tx + ts, by + bs + pad);
+  stg.addColorStop(0, "#a4a99f");
+  stg.addColorStop(0.45, "#8c928a");
+  stg.addColorStop(1, "#71776f");
+  ctx.fillStyle = stg;
+  roundRect(tx, by - pad, ts, ts, Math.max(3, ts * 0.03));
+  ctx.fill();
+  /* 石板边缘：左上受光、右下压暗 */
+  ctx.strokeStyle = "rgba(255,255,255,0.16)";
+  ctx.lineWidth = 1.2;
+  roundRect(tx + 0.6, by - pad + 0.6, ts - 1.2, ts - 1.2, Math.max(3, ts * 0.03));
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(0,0,0,0.22)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(tx + ts * 0.08, by - pad + ts - 1);
+  ctx.lineTo(tx + ts * 0.92, by - pad + ts - 1);
+  ctx.stroke();
+  ctx.restore();
+  /* 石面噪点 */
+  for (i = 0; i < 150; i++) {
+    ctx.globalAlpha = 0.05 + rng() * 0.08;
+    ctx.fillStyle = rng() < 0.5 ? "#5b6159" : "#ccd0c6";
+    ctx.fillRect(tx + rng() * ts, by - pad + rng() * ts, 1.4, 1.4);
+  }
+  ctx.globalAlpha = 1;
+
+  /* ---------- 木盘 ---------- */
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.4)";
+  ctx.shadowBlur = 7;
+  ctx.shadowOffsetY = 3;
+  var wood = ctx.createLinearGradient(bx, by, bx + bs, by + bs);
+  wood.addColorStop(0, "#dcb680");
+  wood.addColorStop(0.5, "#cfa76d");
+  wood.addColorStop(1, "#bd9257");
+  ctx.fillStyle = wood;
+  roundRect(bx, by, bs, bs, Math.max(2, bs * 0.02));
+  ctx.fill();
+  ctx.strokeStyle = "rgba(74,48,22,0.55)";
+  ctx.lineWidth = Math.max(1, bs * 0.012);
+  ctx.stroke();
+  ctx.restore();
+  /* 木纹与高光 */
+  ctx.save();
+  ctx.beginPath();
+  roundRect(bx, by, bs, bs, Math.max(2, bs * 0.02));
+  ctx.clip();
+  for (i = 0; i < 14; i++) {
+    ctx.globalAlpha = 0.05 + rng() * 0.07;
+    ctx.fillStyle = rng() < 0.5 ? "#8a6034" : "#eccfa2";
+    ctx.fillRect(bx, by + rng() * bs, bs, 0.8 + rng() * 2.2);
+  }
+  ctx.globalAlpha = 1;
+  var sheen = ctx.createLinearGradient(bx, by, bx + bs * 0.7, by + bs * 0.7);
+  sheen.addColorStop(0, "rgba(255,246,224,0.22)");
+  sheen.addColorStop(0.55, "rgba(255,246,224,0)");
+  ctx.fillStyle = sheen;
+  ctx.fillRect(bx, by, bs, bs);
+  ctx.restore();
+
+  /* ---------- 格线（9 路）与星位 ---------- */
+  var n = 9, m = bs * 0.075, span = bs - m * 2;
+  function gp(gx, gy) { return [bx + m + span * gx / (n - 1), by + m + span * gy / (n - 1)]; }
+  ctx.strokeStyle = "rgba(40,25,14,0.92)";
+  ctx.lineWidth = Math.max(1, bs * 0.009);
+  ctx.beginPath();
+  for (i = 0; i < n; i++) {
+    var p = m + span * i / (n - 1);
+    ctx.moveTo(bx + m, by + p); ctx.lineTo(bx + bs - m, by + p);
+    ctx.moveTo(bx + p, by + m); ctx.lineTo(bx + p, by + bs - m);
+  }
+  ctx.stroke();
+  ctx.lineWidth = Math.max(1.5, bs * 0.014);
+  ctx.strokeRect(bx + m, by + m, span, span);
+  ctx.fillStyle = "rgba(44,28,16,0.95)";
+  [[2, 2], [6, 2], [2, 6], [6, 6], [4, 4]].forEach(function (s) {
+    var q = gp(s[0], s[1]);
+    ctx.beginPath();
+    ctx.arc(q[0], q[1], Math.max(1.1, bs * 0.013), 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  /* ---------- 云子（蛤贝白 / 那智黑）：投影 + 双凸体 + 高光 ---------- */
+  var sr = span / (n - 1) * 0.47;
+  function stone(gx, gy, white) {
+    var q = gp(gx, gy), cx = q[0], cy = q[1];
+    ctx.beginPath();
+    ctx.ellipse(cx + sr * 0.14, cy + sr * 0.3, sr * 0.98, sr * 0.8, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(12,10,8,0.34)";
+    ctx.fill();
+    var g = ctx.createRadialGradient(cx - sr * 0.32, cy - sr * 0.36, sr * 0.1, cx, cy, sr * 1.05);
+    if (white) {
+      g.addColorStop(0, "#fffdf7");
+      g.addColorStop(0.55, "#f0e9da");
+      g.addColorStop(0.86, "#d8cfba");
+      g.addColorStop(1, "#b8ae97");
+    } else {
+      g.addColorStop(0, "#5c5652");
+      g.addColorStop(0.45, "#2b2826");
+      g.addColorStop(0.85, "#141212");
+      g.addColorStop(1, "#070606");
+    }
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, sr, 0, Math.PI * 2);
+    ctx.fill();
+    /* 下缘暖反光（石灯笼） */
+    ctx.beginPath();
+    ctx.arc(cx + sr * 0.18, cy + sr * 0.3, sr * 0.62, 0.5, 2.5);
+    ctx.strokeStyle = white ? "rgba(255,224,178,0.5)" : "rgba(214,166,110,0.4)";
+    ctx.lineWidth = Math.max(0.8, sr * 0.16);
+    ctx.stroke();
+    /* 镜面高光 */
+    ctx.beginPath();
+    ctx.ellipse(cx - sr * 0.3, cy - sr * 0.34, sr * 0.26, sr * 0.17, -0.6, 0, Math.PI * 2);
+    ctx.fillStyle = white ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.55)";
+    ctx.fill();
+    return { x: cx, y: cy };
+  }
+  var seq = [
+    [2, 6, false], [2, 5, true], [3, 5, false], [3, 6, true],
+    [4, 4, false], [4, 5, true], [5, 3, false], [5, 4, true],
+    [6, 2, false]
+  ];
+  var lastPt = null;
+  seq.forEach(function (s) {
+    lastPt = stone(s[0], s[1], s[2]);
+  });
+  /* 最后一手朱红标记 */
+  if (lastPt) {
+    ctx.beginPath();
+    ctx.arc(lastPt.x, lastPt.y, sr * 0.42, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(178,58,46,0.95)";
+    ctx.lineWidth = Math.max(1.1, sr * 0.2);
+    ctx.stroke();
+  }
+
+  /* ---------- 棋笥：上盒加盖、下盒敞口露子 ---------- */
+  function woodBall(cx, cy, r) {
+    var g = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r * 1.1);
+    g.addColorStop(0, "#dcb07a");
+    g.addColorStop(0.6, "#b98a4e");
+    g.addColorStop(1, "#7f5a30");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  function bowl(cx, cy, r, white, closed) {
+    ctx.beginPath();
+    ctx.ellipse(cx + r * 0.12, cy + r * 0.3, r * 1.02, r * 0.88, 0, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(10,12,9,0.42)";
+    ctx.fill();
+    woodBall(cx, cy, r);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,232,190,0.28)";
+    ctx.lineWidth = Math.max(1, r * 0.08);
+    ctx.stroke();
+    if (closed) {
+      /* 盒盖：多层同心木环 + 顶钮 */
+      for (var L = 0; L < 3; L++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * (0.82 - L * 0.2), 0, Math.PI * 2);
+        ctx.strokeStyle = "rgba(96,64,30," + (0.3 - L * 0.06) + ")";
+        ctx.lineWidth = Math.max(1, r * 0.09);
+        ctx.stroke();
+      }
+      var kg = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.25, r * 0.05, cx, cy, r * 0.36);
+      kg.addColorStop(0, "#e6c086");
+      kg.addColorStop(1, "#8a6236");
+      ctx.fillStyle = kg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+    /* 敞口：内壁 + 盒内棋子 */
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.78, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(56,36,18,0.94)";
+    ctx.fill();
+    for (var k = 0; k < 6; k++) {
+      var a = k * 1.05 + 0.4, rr = r * 0.4 * (k % 2 ? 1 : 0.6);
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, r * 0.19, 0, Math.PI * 2);
+      ctx.fillStyle = white ? "#f2ece1" : "#1b1917";
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.78, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,232,190,0.32)";
+    ctx.lineWidth = Math.max(1, r * 0.08);
+    ctx.stroke();
+  }
+  var br = Math.max(5, bs * 0.115);
+  var bxr = bx + bs + pad * 0.5;                  // 居中于右侧石桌露边
+  bowl(bxr, by + bs * 0.26, br, true, true);
+  bowl(bxr, by + bs * 0.74, br, false, false);
+
+  /* ---------- 前景飘叶 + 暗角 ---------- */
+  leaf(w * 0.9, h * 0.24, 16, 0.9, 0.34);
+  leaf(w * 0.08, h * 0.42, 14, 2.4, 0.3);
+  var vig = ctx.createRadialGradient(w * 0.5, h * 0.42, h * 0.2, w * 0.5, h * 0.42, w * 0.62);
+  vig.addColorStop(0, "rgba(8,12,9,0)");
+  vig.addColorStop(1, "rgba(8,12,9,0.5)");
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, w, h);
+
+  /* ---------- 标题 + 底部金线 ---------- */
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  var titleSize = Math.max(15, Math.min(h * 0.19, 30));
+  var titleY = h * 0.885;
+  var tg = ctx.createLinearGradient(0, titleY - titleSize, 0, titleY);
+  tg.addColorStop(0, "#f6ecd4");
+  tg.addColorStop(0.55, "#c8a06a");
+  tg.addColorStop(1, "#9a7443");
+  ctx.save();
+  ctx.shadowColor = "rgba(200,160,106,.4)";
+  ctx.shadowBlur = titleSize * 0.4;
+  ctx.font = "700 " + titleSize + 'px "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif';
+  ctx.fillStyle = tg;
+  ctx.fillText("围棋 3D", w * 0.5, titleY);
+  ctx.restore();
+  var lg = ctx.createLinearGradient(0, 0, w, 0);
+  lg.addColorStop(0, "rgba(200,160,106,0)");
+  lg.addColorStop(0.16, "rgba(200,160,106,.9)");
+  lg.addColorStop(0.84, "rgba(200,160,106,.9)");
+  lg.addColorStop(1, "rgba(200,160,106,0)");
+  ctx.fillStyle = lg;
+  ctx.fillRect(w * 0.10, h - 3, w * 0.80, 1.6);
+}
+
 function drawPreview(canvas, theme, w, h) {
   if (theme === "spirit") drawSpiritPreview(canvas, w, h);
   else if (theme === "chess") drawChessPreview(canvas, w, h);
+  else if (theme === "go") drawGoPreview(canvas, w, h);
   else drawGloryPreview(canvas, w, h);
 }
 
