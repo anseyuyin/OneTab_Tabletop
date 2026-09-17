@@ -3,13 +3,13 @@
 单页 HTML 桌游集：每个游戏一个独立 HTML 文件，零外部依赖（Three.js 已内联，纹理用 Canvas 运行时绘制）。
 
 ## Project
-- 入口：`games/game_index.html`（菜单）、`games/glory_&_gems.html`（《荣光宝石商》成品）
+- 入口：`games/game_index.html`（菜单）、`games/glory_&_gems.html`（《荣光宝石商》成品）、`games/weiqi.html`（《围棋 3D》）、`games/wuziqi.html`（《五子棋 3D》）
 - 技术栈：原生 HTML/CSS/JS，无构建、无包管理器
 - 界面语言：简体中文；移动端触屏优先
 
 ## Commands
 - 运行：直接用浏览器打开 `games/glory_&_gems.html` 或 `games/game_index.html`（无构建步骤）
-- 测试：`node --test tests/seat_colors.test.js tests/ai_difficulty.test.js`
+- 测试：`node --test tests/weiqi_rules.test.js tests/chinese_chess_rules.test.js tests/wuziqi_rules.test.js`
 - 语法验证（Node 检查所有 `<script>` 块）：
   `node -e 'const fs=require("fs");const h=fs.readFileSync("games/glory_&_gems.html","utf8");const re=/<script[^>]*>([\s\S]*?)<\/script>/gi;let m;while((m=re.exec(h))){if(m[1].trim())new Function(m[1]);}console.log("JS syntax OK")'`
 

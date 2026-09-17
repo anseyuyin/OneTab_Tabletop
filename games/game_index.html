@@ -237,6 +237,16 @@ var GAMES = [
     theme: "go"
   },
   {
+    id: "wuziqi",
+    file: "wuziqi.html",
+    name: "五子棋 3D",
+    nameEn: "Gomoku 3D",
+    desc: "竹林庭院石桌上的真 3D 五子棋：9 / 13 / 15 路任选，黑先白后、先成五连者胜，单人挑战四档 Alpha-Beta 搜索 AI 或双人同机对弈，支持悔棋、手数标注、续局与棋谱回放。",
+    tags: ["1-2人", "回合制", "策略", "有AI", "3D"],
+    status: "ready",
+    theme: "gomoku"
+  },
+  {
     id: "spirit_stone_clash",
     file: null,
     name: "灵石争锋",
@@ -533,10 +543,11 @@ function drawChessPreview(canvas, w, h) {
 }
 
 /* 围棋 3D：夜色竹林庭院中石桌上的对局特写（程序化绘制，呼应游戏内 3D 场景） */
-function drawGoPreview(canvas, w, h) {
+function drawGoPreview(canvas, w, h, variant) {
   var ctx = canvas.getContext("2d");
   var rng = makeRng(913);
   var i;
+  var gomoku = variant === "gomoku";
 
   /* ---------- 背景：竹青夜色 + 石灯笼暖光 + 顶部天光 ---------- */
   var bg = ctx.createLinearGradient(0, 0, 0, h);
@@ -770,23 +781,31 @@ function drawGoPreview(canvas, w, h) {
     ctx.fill();
     return { x: cx, y: cy };
   }
-  var seq = [
+  var seq = gomoku ? [
+    [3, 4, false], [3, 5, true], [4, 4, false], [5, 5, true],
+    [5, 4, false], [7, 3, true], [6, 4, false], [4, 6, true],
+    [7, 4, false]
+  ] : [
     [2, 6, false], [2, 5, true], [3, 5, false], [3, 6, true],
     [4, 4, false], [4, 5, true], [5, 3, false], [5, 4, true],
     [6, 2, false]
   ];
   var lastPt = null;
+  var winPts = [];
   seq.forEach(function (s) {
     lastPt = stone(s[0], s[1], s[2]);
+    if (gomoku && !s[2]) winPts.push(lastPt);
   });
-  /* 最后一手朱红标记 */
-  if (lastPt) {
+  /* 五连 / 最后一手朱红标记 */
+  function redRing(p) {
     ctx.beginPath();
-    ctx.arc(lastPt.x, lastPt.y, sr * 0.42, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, sr * 0.42, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(178,58,46,0.95)";
     ctx.lineWidth = Math.max(1.1, sr * 0.2);
     ctx.stroke();
   }
+  if (gomoku) winPts.forEach(redRing);
+  else if (lastPt) redRing(lastPt);
 
   /* ---------- 棋笥：上盒加盖、下盒敞口露子 ---------- */
   function woodBall(cx, cy, r) {
@@ -874,7 +893,7 @@ function drawGoPreview(canvas, w, h) {
   ctx.shadowBlur = titleSize * 0.4;
   ctx.font = "700 " + titleSize + 'px "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif';
   ctx.fillStyle = tg;
-  ctx.fillText("围棋 3D", w * 0.5, titleY);
+  ctx.fillText(gomoku ? "五子棋 3D" : "围棋 3D", w * 0.5, titleY);
   ctx.restore();
   var lg = ctx.createLinearGradient(0, 0, w, 0);
   lg.addColorStop(0, "rgba(200,160,106,0)");
@@ -889,6 +908,7 @@ function drawPreview(canvas, theme, w, h) {
   if (theme === "spirit") drawSpiritPreview(canvas, w, h);
   else if (theme === "chess") drawChessPreview(canvas, w, h);
   else if (theme === "go") drawGoPreview(canvas, w, h);
+  else if (theme === "gomoku") drawGoPreview(canvas, w, h, "gomoku");
   else drawGloryPreview(canvas, w, h);
 }
 
