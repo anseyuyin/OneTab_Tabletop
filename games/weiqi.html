@@ -2281,7 +2281,7 @@ var CamCtl = {
   yaw: 0,           // 相对基准的水平偏转（限位 ±35°）
   baseYaw: 0,       // 基准朝向（人机执白时整体旋转 π，对局中不再随回合变化）
   zoom: 1,          // 0.6 ~ 2.4
-  pitch: 1.45,      // 俯角 ≈ 83°（正俯视）
+  pitch: Math.PI / 2,  // 俯角 = 90°（严格正俯视）
   dist: 30,
   target: new THREE.Vector3(0, BOARD_TOP, 0),
   update: function () {
@@ -2327,8 +2327,8 @@ function fitCamera() {
   cam.updateProjectionMatrix();
   CamCtl.update();
   if ('ontouchstart' in window && N >= 19) {
-    var pxPerCell = Math.min(w, h) / (S / Math.min(CamCtl.zoom, 1));
-    if (pxPerCell < 22) UI.toast('盘面较小，可双指放大后落子', 2600);
+    var pxPerCell = Math.min(w, h) * 0.9 / (face / Math.min(CamCtl.zoom, 1));
+    if (pxPerCell < 22 && G.screen === 'game') UI.toast('盘面较小，可双指放大后落子', 2600);
   }
 }
 /* 手势：单指旋转（±35°）/ 双指捏合 / 双击复位 / 滚轮缩放；点击分发 */

@@ -1774,7 +1774,7 @@ var CamCtl = {
   yaw: 0,           // 相对基准的水平偏转（限位 ±35°）
   baseYaw: 0,       // 基准朝向（人机执白时整体旋转 π，对局中不再随回合变化）
   zoom: 1,          // 0.6 ~ 2.4
-  pitch: 1.45,      // 俯角 ≈ 83°（正俯视）
+  pitch: Math.PI / 2,  // 俯角 = 90°（严格正俯视）
   dist: 30,
   target: new THREE.Vector3(0, BOARD_TOP, 0),
   update: function () {
@@ -1786,6 +1786,9 @@ var CamCtl = {
       CamCtl.target.y + sp * d,
       CamCtl.target.z + Math.cos(y) * cp * d
     );
+    /* 正俯视时视线与默认 up(0,1,0) 平行会让 lookAt 退化；
+       显式给出屏幕上方朝向（随 yaw 旋转），保证朝向与棋盘方位正确 */
+    SceneRoot.camera.up.set(-Math.sin(y) * sp, cp, -Math.cos(y) * sp);
     SceneRoot.camera.lookAt(CamCtl.target);
   },
   reset: function () {
