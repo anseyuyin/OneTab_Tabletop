@@ -217,6 +217,16 @@ var GAMES = [
     theme: "glory"
   },
   {
+    id: "carcassonne",
+    file: "carcassonne.html",
+    name: "卡卡颂",
+    nameEn: "Carcassonne",
+    desc: "经典中世纪拼板桌游：拼接城堡、道路与田野，派遣随从争夺区域。72 张标准板块，2~5 人同屏或人机对战，完整终局农田计分。",
+    tags: ["2-5人", "拼板", "策略", "有AI"],
+    status: "ready",
+    theme: "carcassonne"
+  },
+  {
     id: "chinese_chess",
     file: "chinese_chess.html",
     name: "中国象棋 3D",
@@ -904,11 +914,57 @@ function drawGoPreview(canvas, w, h, variant) {
   ctx.fillRect(w * 0.10, h - 3, w * 0.80, 1.6);
 }
 
+function drawCarcassonnePreview(canvas, w, h) {
+  var ctx = canvas.getContext("2d");
+  var bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, "#182c24"); bg.addColorStop(1, "#314c36");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = "rgba(237,205,127,.12)";
+  ctx.beginPath(); ctx.arc(w * .78, h * .18, h * .20, 0, Math.PI * 2); ctx.fill();
+  var s = Math.min(h * .48, w * .17), ox = w * .5 - s * 2, oy = h * .43;
+  function tile(x, y, kind) {
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = "#91a968"; ctx.fillRect(-s / 2, -s / 2, s, s);
+    ctx.strokeStyle = "rgba(29,49,30,.6)"; ctx.lineWidth = 1; ctx.strokeRect(-s / 2, -s / 2, s, s);
+    if (kind === "city") {
+      var cg = ctx.createLinearGradient(0, -s / 2, 0, 0);
+      cg.addColorStop(0, "#b6a17e"); cg.addColorStop(1, "#8f7b62");
+      ctx.fillStyle = cg; ctx.fillRect(-s / 2, -s / 2, s, s * .52);
+      for (var q = 0; q < 4; q++) {
+        var hx = -s * .36 + q * s * .23;
+        ctx.fillStyle = "#ddcba7"; ctx.fillRect(hx, -s * .35, s * .14, s * .14);
+        ctx.fillStyle = q % 2 ? "#8e4c3b" : "#aa6045"; ctx.beginPath(); ctx.moveTo(hx - s * .03, -s * .35); ctx.lineTo(hx + s * .07, -s * .45); ctx.lineTo(hx + s * .17, -s * .35); ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = "#625c50"; ctx.fillRect(-s / 2, -s * .10, s, s * .15);
+      ctx.fillStyle = "#aa9e85"; ctx.fillRect(-s / 2, -s * .09, s, s * .10);
+      ctx.fillStyle = "#d0c2a3";
+      for (q = 0; q < 8; q++) ctx.fillRect(-s * .48 + q * s * .135, -s * .16, s * .065, s * .09);
+      ctx.fillStyle = "#e7c75e"; ctx.beginPath(); ctx.moveTo(0, -s * .42); ctx.lineTo(s * .07, -s * .29); ctx.lineTo(0, -s * .20); ctx.lineTo(-s * .07, -s * .29); ctx.closePath(); ctx.fill();
+    }
+    if (kind === "road" || kind === "city") {
+      ctx.strokeStyle = "#c4ad7b"; ctx.lineWidth = s * .12; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-s / 2, s * .2); ctx.quadraticCurveTo(0, s * .2, 0, s / 2); ctx.stroke();
+    }
+    if (kind === "abbey") {
+      ctx.fillStyle = "#e2d6b0"; ctx.fillRect(-s * .18, -s * .03, s * .36, s * .25);
+      ctx.fillStyle = "#b94f3f"; ctx.beginPath(); ctx.moveTo(-s * .24, -s * .03); ctx.lineTo(0, -s * .28); ctx.lineTo(s * .24, -s * .03); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+  tile(ox, oy, "road"); tile(ox + s, oy, "city"); tile(ox + s * 2, oy, "city"); tile(ox + s * 3, oy, "road"); tile(ox + s * 4, oy, "abbey");
+  tile(ox + s, oy + s, "road"); tile(ox + s * 2, oy + s, "road");
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = "700 " + Math.max(18, h * .16) + 'px Georgia,"Songti SC",serif';
+  ctx.fillStyle = "#f1dfae"; ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 10;
+  ctx.fillText("卡 卡 颂", w * .5, h * .88); ctx.shadowBlur = 0;
+}
+
 function drawPreview(canvas, theme, w, h) {
   if (theme === "spirit") drawSpiritPreview(canvas, w, h);
   else if (theme === "chess") drawChessPreview(canvas, w, h);
   else if (theme === "go") drawGoPreview(canvas, w, h);
   else if (theme === "gomoku") drawGoPreview(canvas, w, h, "gomoku");
+  else if (theme === "carcassonne") drawCarcassonnePreview(canvas, w, h);
   else drawGloryPreview(canvas, w, h);
 }
 
