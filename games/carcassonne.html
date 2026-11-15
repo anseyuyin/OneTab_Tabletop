@@ -275,7 +275,7 @@ function finalScoring(){
 
 /* ============ 对局流程 ============ */
 function buildDeck(){var a=[],startRemoved=false;TILE_DEFS.forEach(function(d){for(var i=0;i<d.n;i++){if(d.id==="D"&&!startRemoved){startRemoved=true;continue;}a.push({def:d,uid:d.id+"-"+i});}});return shuffle(a);}
-function drawCurrent(){if(!deck.length){finishGame();return;}current=deck.pop();currentRot=0;selected=null;pendingZone=null;phase="place";lastPlaced=null;legalCache.version=-1;updateUI();requestRender();if(players[turn].ai)scheduleAI(600);}
+function drawCurrent(){if(!deck.length){finishGame();return;}current=deck.pop();currentRot=0;selected=null;pendingZone=null;phase="place";lastPlaced=null;legalCache.version=-1;if(typeof Pad!=="undefined"&&Pad.active)Pad.sceneChange();updateUI();requestRender();if(players[turn].ai)scheduleAI(600);}
 function placeCurrent(x,y,rot){
  if(phase!=="place"||!current||!canPlace(current.def,rot,x,y))return false;
  var t={def:current.def,rot:rot,x:x,y:y,meeple:null,uid:current.uid};computeZones(t);board.set(key(x,y),t);lastPlaced=t;current=null;selected=null;pendingZone=null;phase="meeple";boardVersion++;
@@ -421,7 +421,7 @@ function drawMeeple(g,x,y,size,color,dark,lying,alpha){
 
 /* ============ Three.js 界面桥接 ============ */
 var setup={count:2,types:[false,true,false,true,true]};
-function rotateCurrent(){if(phase!=="place"||!current||players[turn].ai)return;var rots=rotationsFor(current.def);if(rots.length<2)return;var at=rots.indexOf(currentRot);currentRot=rots[(at+1)%rots.length];selected=null;legalCache.rot=-1;tone(330,.05);updateUI();requestRender();}
+function rotateCurrent(dir){if(phase!=="place"||!current||players[turn].ai)return;var rots=rotationsFor(current.def);if(rots.length<2)return;var at=rots.indexOf(currentRot),step=dir===-1?-1:1;currentRot=rots[(at+step+rots.length)%rots.length];selected=null;legalCache.rot=-1;tone(330,.05);updateUI();requestRender();}
 
 /* ============ Three.js 渲染与界面层 ============ */
 var renderer,scene,camera,hudScene,hudCamera,tableRoot,tileRoot,markerRoot;
@@ -430,6 +430,7 @@ var hudButtons=[],hudBlockers=[],threeTileMaterials={},threeTextures={},hudTextu
 var viewAnimFrame=0,focusReturnView=null;
 var tilePlaneGeo,tileBaseGeo,zoneBadgeGeo,zoneMarkerTextures={},sharedMeepleGeo={},raycaster=new THREE.Raycaster(),pickPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
 var clockLast=0;
+var padScene=null,padFocusGroup=null,padFrameGeo=null,padFrameLayers=[];
 var viewportW=0,viewportH=0,hudW=0,hudH=0,uiScale=1;
 var celebrationRequested=false,celebrationActive=false,celebrationParticles=[],celebrationFrame=0,celebrationLast=0,celebrationStart=0,victorySoundTimers=[];
 var UI_ZOOM_KEY="carcassonne_ui_zoom_v1";
@@ -446,30 +447,32 @@ function isStandaloneDisplay(){
  try{return !!(window.navigator.standalone||(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches));}catch(e){return false;}
 }
 function fullscreenButtonLabel(){return isFullscreenActive()?"退出":"全屏";}
-function fullscreenUnavailable(){
- toast(isStandaloneDisplay()?"当前已全屏显示":"请将本页添加到主屏幕",3600);
+var fullscreenAttemptFromPad=false;
+function fullscreenUnavailable(fromPad){
+ toast(fromPad?"浏览器限制 · 请触摸全屏按钮":isStandaloneDisplay()?"当前已全屏显示":"请将本页添加到主屏幕",3600);
 }
-function requestAppFullscreen(){
+function requestAppFullscreen(fromPad){
+ fullscreenAttemptFromPad=!!fromPad;
  var el=document.documentElement,fn=el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen||el.msRequestFullscreen;
- if(!fn){fullscreenUnavailable();return false;}
+ if(!fn){fullscreenUnavailable(fromPad);return false;}
  try{
   var p=fn.call(el);
-  if(p&&typeof p.catch==="function")p.catch(fullscreenUnavailable);
+  if(p&&typeof p.catch==="function")p.catch(function(){fullscreenUnavailable(fromPad);});
   return true;
- }catch(e){fullscreenUnavailable();return false;}
+ }catch(e){fullscreenUnavailable(fromPad);return false;}
 }
 function exitAppFullscreen(){
  var fn=document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen||document.msExitFullscreen;
  if(!fn)return false;
  try{var p=fn.call(document);if(p&&typeof p.catch==="function")p.catch(function(){});return true;}catch(e){return false;}
 }
-function toggleAppFullscreen(){
+function toggleAppFullscreen(fromPad){
  if(isFullscreenActive()){exitAppFullscreen();return;}
- if(isStandaloneDisplay()){fullscreenUnavailable();return;}
- requestAppFullscreen();
+ if(isStandaloneDisplay()){fullscreenUnavailable(fromPad);return;}
+ requestAppFullscreen(fromPad);
 }
 function onFullscreenChanged(){
- hudDirty=true;requestRender();
+ fullscreenAttemptFromPad=false;hudDirty=true;requestRender();
  setTimeout(function(){resize();hudDirty=true;requestRender();},80);
 }
 function clearHudTextureCache(){
@@ -502,7 +505,7 @@ function buildAttractBoard(){
  var ids=["V","M","D","N","U","J","B"];ids.forEach(function(id,i){var t={def:DEF_BY_ID[id],rot:i%2,x:i-3,y:i%2?0:1,meeple:null};computeZones(t);board.set(key(t.x,t.y),t);});
  view={x:0,y:.5,size:78,dist:8};sceneSignature="";updateCamera();
 }
-function goHome(){clearTimeout(aiTimer);cancelViewAnimation();stopVictoryCelebration();focusReturnView=null;running=false;uiMode="home";modal=null;buildAttractBoard();hudDirty=true;requestRender();}
+function goHome(){clearTimeout(aiTimer);cancelViewAnimation();stopVictoryCelebration();focusReturnView=null;running=false;uiMode="home";modal=null;if(typeof Pad!=="undefined"&&Pad.active)Pad.sceneChange();buildAttractBoard();hudDirty=true;requestRender();}
 
 function initThree(){
  renderer=new THREE.WebGLRenderer({canvas:document.getElementById("gl"),antialias:true,alpha:false,powerPreference:"high-performance"});
@@ -511,6 +514,7 @@ function initThree(){
  scene=new THREE.Scene();scene.background=new THREE.Color(0x14251c);
  camera=new THREE.OrthographicCamera(-1,1,1,-1,.1,60);camera.up.set(0,0,-1);
  hudScene=new THREE.Scene();hudCamera=new THREE.OrthographicCamera(0,1,1,0,-1000,1000);hudCamera.position.z=500;
+ initPadFocusVisuals();
  var hemi=new THREE.HemisphereLight(0xf7f4e8,0x294334,.7);scene.add(hemi);
  var sun=new THREE.DirectionalLight(0xfff1d6,.9);sun.position.set(-5,10,5);scene.add(sun);
  var tableTex=makeTableTexture(),tableMat=new THREE.MeshBasicMaterial({map:tableTex,toneMapped:false});
@@ -651,6 +655,7 @@ function render(){
  var sig=currentSceneSignature();if(sig!==sceneSignature){sceneSignature=sig;syncBoard();}
  if(hudDirty){buildHud();hudDirty=false;}
  renderer.clear();renderer.render(scene,camera);renderer.clearDepth();renderer.render(hudScene,hudCamera);
+ if(padScene){renderer.clearDepth();renderer.render(padScene,hudCamera);}
 }
 
 /* ============ HUD：全部使用 Three.js 纹理与网格 ============ */
@@ -1118,7 +1123,7 @@ function initInput(){
  document.addEventListener("dblclick",function(e){e.preventDefault();},{passive:false});
  document.addEventListener("touchmove",function(e){if(e.touches.length>1)e.preventDefault();},{passive:false});
  ["fullscreenchange","webkitfullscreenchange","mozfullscreenchange","MSFullscreenChange"].forEach(function(name){document.addEventListener(name,onFullscreenChanged,false);});
- ["fullscreenerror","webkitfullscreenerror"].forEach(function(name){document.addEventListener(name,fullscreenUnavailable,false);});
+ ["fullscreenerror","webkitfullscreenerror"].forEach(function(name){document.addEventListener(name,function(){fullscreenUnavailable(fullscreenAttemptFromPad);},false);});
  glCanvas.addEventListener("wheel",function(e){e.preventDefault();zoomAt(e.deltaY<0?1.12:.89,e.clientX,e.clientY);},{passive:false});
  window.addEventListener("resize",resize);
  window.addEventListener("keydown",function(e){
@@ -1128,7 +1133,241 @@ function initInput(){
  });
 }
 
-initThree();initInput();resize();goHome();requestRender();
+/* ============ 手柄导航 ============ */
+function initPadFocusVisuals(){
+ padScene=new THREE.Scene();
+ padFocusGroup=new THREE.Group();padFocusGroup.visible=false;padFocusGroup.position.z=200;padFrameGeo=new THREE.PlaneGeometry(1,1);padFrameLayers=[];
+ [{color:0xffffff,opacity:.96,pad:1,thickness:2.5,order:270},{color:0xe4c277,opacity:.32,pad:5,thickness:5,order:269}].forEach(function(cfg){
+  var mat=new THREE.MeshBasicMaterial({color:cfg.color,transparent:true,opacity:cfg.opacity,depthTest:false,depthWrite:false,toneMapped:false}),meshes=[];
+  for(var i=0;i<4;i++){var m=new THREE.Mesh(padFrameGeo,mat);m.renderOrder=cfg.order;padFocusGroup.add(m);meshes.push(m);}
+  padFrameLayers.push({pad:cfg.pad,thickness:cfg.thickness,mat:mat,meshes:meshes});
+ });
+ padScene.add(padFocusGroup);
+}
+var padFocusSig="";
+function padHideFocus(){
+ if(padFocusGroup&&padFocusGroup.visible){padFocusGroup.visible=false;padFocusSig="";requestRender();}
+}
+function padDrawFocus(c){
+ if(!padFocusGroup)return;
+ var w=Math.max(8,c.w||20),h=Math.max(8,c.h||20),sig=[Math.round(c.x),Math.round(c.y),Math.round(w),Math.round(h)].join("|");
+ if(padFocusGroup.visible&&sig===padFocusSig)return;
+ padFocusSig=sig;padFocusGroup.visible=true;padFocusGroup.position.set(c.x+w/2,hudH-(c.y+h/2),200);
+ padFrameLayers.forEach(function(layer){
+  var lw=w+layer.pad*2,lh=h+layer.pad*2,m=layer.meshes,th=layer.thickness;
+  m[0].position.set(0,lh/2,0);m[0].scale.set(lw,th,1);
+  m[1].position.set(0,-lh/2,0);m[1].scale.set(lw,th,1);
+  m[2].position.set(-lw/2,0,0);m[2].scale.set(th,lh,1);
+  m[3].position.set(lw/2,0,0);m[3].scale.set(th,lh,1);
+ });
+ requestRender();
+}
+var Pad={
+ active:false,connected:false,focus:null,focusKey:null,focusIdx:-1,cands:[],lastAny:false,hintCtx:"",timer:0,forceSelect:false,frameSig:"",
+ dirs:{up:{p:false,t:0,r:false},down:{p:false,t:0,r:false},left:{p:false,t:0,r:false},right:{p:false,t:0,r:false}},
+ prev:{a:false,b:false,lb:false,rb:false,start:false,lt:false,rt:false},
+ init:function(){
+  if(this.initialized)return;this.initialized=true;
+  document.addEventListener("pointerdown",function(){Pad.deactivate();},true);
+  window.addEventListener("gamepadconnected",function(){Pad.connected=true;Pad.lastAny=false;toast("手柄已连接",1800);});
+  window.addEventListener("gamepaddisconnected",function(){Pad.connected=false;Pad.deactivate();});
+  this.timer=setInterval(function(){Pad.poll();},33);
+ },
+ getGamepad:function(){
+  try{var gps=navigator.getGamepads?navigator.getGamepads():[];for(var i=0;i<gps.length;i++)if(gps[i]&&gps[i].connected)return gps[i];}catch(e){}
+  return null;
+ },
+ pressed:function(gp,i){try{return !!(gp&&gp.buttons&&gp.buttons[i]&&gp.buttons[i].pressed);}catch(e){return false;}},
+ hasInput:function(gp){
+  if(!gp)return false;
+  try{for(var i=0;i<gp.buttons.length;i++)if(gp.buttons[i].pressed)return true;for(var j=0;j<gp.axes.length;j++)if(Math.abs(gp.axes[j])>.35)return true;}catch(e){}
+  return false;
+ },
+ readDirs:function(gp){
+  var out={up:false,down:false,left:false,right:false};
+  if(!gp)return out;
+  try{
+   var b=gp.buttons;
+   if(b&&b.length>15){if(b[12].pressed)out.up=true;if(b[13].pressed)out.down=true;if(b[14].pressed)out.left=true;if(b[15].pressed)out.right=true;}
+   if(gp.axes&&gp.axes.length>1){var x=gp.axes[0],y=gp.axes[1],mag=Math.sqrt(x*x+y*y);if(mag>.45){var nx=x/mag,ny=y/mag;if(Math.abs(nx)>=Math.abs(ny))out[nx>0?"right":"left"]=true;else out[ny>0?"down":"up"]=true;}}
+  }catch(e){}
+  return out;
+ },
+ activate:function(){
+  this.active=true;this.hintCtx="";this.forceSelect=true;this.resetRepeat();this.showHint();hudDirty=true;requestRender();
+ },
+ deactivate:function(){
+  if(!this.active&&!this.focus)return;
+  this.active=false;this.focus=null;this.focusKey=null;this.focusIdx=-1;this.hintCtx="";this.lastAny=true;this.forceSelect=false;this.resetRepeat();padHideFocus();requestRender();
+ },
+ resetRepeat:function(){
+  for(var k in this.dirs)this.dirs[k].p=false;
+ },
+ refresh:function(){
+  var oldKey=this.focusKey,oldFocus=this.focus,list=this.buildCandidates(),idx=-1;
+  this.cands=list;
+  if(oldKey){for(var i=0;i<list.length;i++)if(list[i].key===oldKey){idx=i;break;}}
+  if(idx<0)idx=this.defaultIndex(list);
+  this.focusIdx=idx;this.focus=idx>=0?list[idx]:null;this.focusKey=this.focus?this.focus.key:null;
+  if(this.focus){
+   if(this.focus.kind==="cell"&&(oldKey!==this.focus.key||this.forceSelect)){selected={x:this.focus.bx,y:this.focus.by};hudDirty=true;requestRender();}
+   this.forceSelect=false;padDrawFocus(this.focus);
+  }else{this.forceSelect=false;padHideFocus();}
+ },
+ sceneChange:function(){
+  this.focus=null;this.focusKey=null;this.focusIdx=-1;this.forceSelect=true;
+ },
+ buildCandidates:function(){
+  var out=[],i,b;
+  for(i=0;i<hudButtons.length;i++){
+   b=hudButtons[i];if(b.disabled)continue;
+   out.push({key:"btn:"+b.id,kind:"button",id:b.id,x:b.x,y:b.y,w:b.w,h:b.h,cx:b.x+b.w/2,cy:b.y+b.h/2});
+  }
+  if(uiMode==="game"&&!modal&&phase==="place"&&current&&players[turn]&&!players[turn].ai){
+   var legal=legalForCurrent();
+   for(i=0;i<legal.length;i++){var c=this.cellCandidate(legal[i].x,legal[i].y);if(c)out.push(c);}
+  }
+  return out;
+ },
+ cellCandidate:function(x,y){
+  if(!camera)return null;
+  function pr(wx,wz){var v=new THREE.Vector3(wx,0,wz).project(camera);return {x:(v.x*.5+.5)*hudW,y:(v.y*-.5+.5)*hudH};}
+  var p1=pr(x-.5,y-.5),p2=pr(x+.5,y-.5),p3=pr(x-.5,y+.5),p4=pr(x+.5,y+.5);
+  var minX=Math.min(p1.x,p2.x,p3.x,p4.x),maxX=Math.max(p1.x,p2.x,p3.x,p4.x),minY=Math.min(p1.y,p2.y,p3.y,p4.y),maxY=Math.max(p1.y,p2.y,p3.y,p4.y);
+  var cx=(minX+maxX)/2,cy=(minY+maxY)/2;
+  if(maxX<0||minX>hudW||maxY<0||minY>hudH)return null;
+  for(var i=0;i<hudBlockers.length;i++){var r=hudBlockers[i];if(cx>=r.x&&cx<=r.x+r.w&&cy>=r.y&&cy<=r.y+r.h)return null;}
+  return {key:"cell:"+x+","+y,kind:"cell",id:null,bx:x,by:y,x:minX,y:minY,w:Math.max(16,maxX-minX),h:Math.max(16,maxY-minY),cx:cx,cy:cy};
+ },
+ findLast:function(id){
+  for(var i=this.cands.length-1;i>=0;i--)if(this.cands[i].id===id)return i;return -1;
+ },
+ defaultIndex:function(list){
+  if(!list||!list.length)return -1;
+  if(modal){
+   if(modal==="help"){var hid=helpPage===0?"help:tab:1":"ui:close",hi=this.findLast(hid);if(hi>=0)return hi;}
+   if(modal==="gameover"){var gi=this.findLast("ui:again");if(gi>=0)return gi;}
+   if(modal==="confirmHome"){var ci=this.findLast("ui:close");if(ci>=0)return ci;}
+   if(modal==="log"){var li=this.findLast("ui:close");if(li>=0)return li;}
+   var any=this.findLast("ui:close");if(any>=0)return any;
+  }
+  if(uiMode==="home"){var si=this.findLast("home:start");if(si>=0)return si;}
+  if(uiMode==="game"){
+   if(phase==="meeple"){
+    if(pendingZone){var fi=this.findLast("feature:confirm");if(fi>=0)return fi;}
+    for(var z=0;z<list.length;z++)if(list[z].id&&list[z].id.indexOf("feature:zone:")===0)return z;
+    var sf=this.findLast("feature:skip");if(sf>=0)return sf;
+   }else if(phase==="place"){
+    var best=-1,bd=Infinity;
+    for(var i=0;i<list.length;i++)if(list[i].kind==="cell"){var dx=list[i].cx-hudW/2,dy=list[i].cy-hudH/2,d=dx*dx+dy*dy;if(d<bd){bd=d;best=i;}}
+    if(best>=0)return best;
+    var di=this.findLast("game:discard");if(di>=0)return di;
+    var ri=this.findLast("game:rotate");if(ri>=0)return ri;
+    var pi=this.findLast("game:place");if(pi>=0)return pi;
+   }
+   var mi=this.findLast("ui:menu");if(mi>=0)return mi;
+  }
+  var best=-1,bestD=Infinity;
+  for(var k=0;k<list.length;k++){var ddx=list[k].cx-hudW/2,ddy=list[k].cy-hudH/2,dd=ddx*ddx+ddy*ddy;if(dd<bestD){bestD=dd;best=k;}}
+  return best;
+ },
+ move:function(dirName){
+  if(!this.focus){this.refresh();}
+  if(!this.focus)return;
+  var cur=this.focus,dv={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}}[dirName];
+  var horizontal=dirName==="up"||dirName==="down",lane=-1,lanePrimary=Infinity,lanePerp=Infinity;
+  var fallback=-1,fallbackScore=-Infinity,fallbackDist=Infinity;
+  for(var i=0;i<this.cands.length;i++){
+   var c=this.cands[i];if(c===cur)continue;
+   var dx=c.cx-cur.cx,dy=c.cy-cur.cy;
+   var forward=dirName==="up"?dy<-1:dirName==="down"?dy>1:dirName==="left"?dx<-1:dx>1;
+   if(!forward)continue;
+   var overlap=horizontal?(c.x<cur.x+cur.w&&c.x+c.w>cur.x):(c.y<cur.y+cur.h&&c.y+c.h>cur.y);
+   var primary=horizontal?Math.abs(dy):Math.abs(dx),perp=horizontal?Math.abs(dx):Math.abs(dy);
+   if(overlap&&(primary<lanePrimary-1e-9||(Math.abs(primary-lanePrimary)<1e-9&&perp<lanePerp))){lanePrimary=primary;lanePerp=perp;lane=i;}
+   var dot=dx*dv.x+dy*dv.y,dist=Math.sqrt(dx*dx+dy*dy)||1e-6,score=dot/dist+(c.kind===cur.kind?.04:0);
+   if(score>fallbackScore+1e-9||(Math.abs(score-fallbackScore)<1e-9&&dist<fallbackDist)){fallbackScore=score;fallbackDist=dist;fallback=i;}
+  }
+  var best=lane>=0?lane:fallback;
+  if(best>=0){this.focusIdx=best;this.focus=this.cands[best];this.focusKey=this.focus.key;this.forceSelect=true;this.refresh();tone(470,.025);}
+ },
+ confirm:function(){
+  var c=this.focus;if(!c)return;
+  if(c.kind==="cell"){
+   if(uiMode==="game"&&phase==="place"&&current&&players[turn]&&!players[turn].ai)placeCurrent(c.bx,c.by,currentRot);
+   return;
+  }
+  if(!c.id)return;
+  var id=c.id;
+  if(id==="ui:fullscreen"){toggleAppFullscreen(true);return;}
+  doAction(id);
+  if(id.indexOf("feature:zone:")===0||id==="feature:skip"){this.focusKey="feature:confirm";this.focus=null;this.forceSelect=false;}
+  else if(id==="game:rotate"||id==="game:discard"){this.focusKey=null;this.focus=null;this.forceSelect=true;}
+  requestRender();
+ },
+ back:function(){
+  if(modal){doAction("ui:close");return;}
+  if(uiMode==="game"){
+   if(phase==="meeple"&&pendingZone){pendingZone=null;hudDirty=true;requestRender();return;}
+   if(phase==="place"&&selected){selected=null;hudDirty=true;requestRender();return;}
+   doAction("ui:menu");
+  }else if(uiMode==="home"&&isFullscreenActive()){exitAppFullscreen();}
+ },
+ startAction:function(){
+  if(modal){doAction("ui:close");return;}
+  if(uiMode==="home"){doAction("home:start");return;}
+  if(uiMode==="game")doAction("ui:menu");
+ },
+ rotate:function(dir){
+  if(uiMode==="game"&&!modal&&phase==="place"&&current&&players[turn]&&!players[turn].ai){this.focusKey=null;this.focus=null;this.forceSelect=true;rotateCurrent(dir);}
+ },
+ showHint:function(){
+  var noCells=uiMode==="game"&&!modal&&phase==="place"&&current&&legalForCurrent().length===0;
+  var ctx=(modal||"")+"|"+uiMode+"|"+(phase||"")+"|"+(noCells?1:0);
+  if(ctx===this.hintCtx)return;this.hintCtx=ctx;
+  var text=modal?"A确认 · B返回":uiMode==="home"?"方向键选择 · A确认":phase==="place"?(noCells?(allLegal(current.def).length===0?"A移出 · B菜单":"无落点 · LB/RB换方向"):"LB/RB旋转 · A放置"):phase==="meeple"?"A预选 · B取消":"B菜单";
+  toast(text,2600);
+ },
+ poll:function(){
+  var gp=this.getGamepad();
+  if(!gp){if(this.active)this.deactivate();this.lastAny=false;return;}
+  this.connected=true;
+  var any=this.hasInput(gp);
+  if(!this.active){
+   if(any&&!this.lastAny){this.activate();this.lastAny=true;this.stepCamera(gp);this.refresh();this.stepDirs(gp);this.stepButtons(gp,true);}
+   else this.lastAny=any;
+   return;
+  }
+  this.lastAny=any;this.stepCamera(gp);this.refresh();this.showHint();this.stepDirs(gp);this.stepButtons(gp,false);
+ },
+ stepCamera:function(gp){
+  if(uiMode!=="game"||modal)return;
+  var ax=gp.axes&&gp.axes[2]||0,ay=gp.axes&&gp.axes[3]||0;
+  if(Math.abs(ax)<.25&&Math.abs(ay)<.25)return;
+  cancelViewAnimation();
+  view.x+=ax*(camera.right-camera.left)*.018;
+  view.y+=ay*(camera.top-camera.bottom)*.018;
+  updateCamera();requestRender();
+ },
+ stepDirs:function(gp){
+  var dirs=this.readDirs(gp),now=performance.now(),names=["up","down","left","right"];
+  for(var i=0;i<4;i++){var n=names[i],st=this.dirs[n],on=dirs[n];if(on){if(!st.p){st.p=true;st.t=now;st.r=false;this.move(n);}else if(now-st.t>=(st.r?150:420)){st.t=now;st.r=true;this.move(n);}}else st.p=false;}
+ },
+ stepButtons:function(gp,justActivated){
+  var a=this.pressed(gp,0),b=this.pressed(gp,1),lb=this.pressed(gp,4),rb=this.pressed(gp,5),start=this.pressed(gp,9),lt=this.pressed(gp,6),rt=this.pressed(gp,7);
+  if(!justActivated){
+   if(a&&!this.prev.a)this.confirm();
+   if(b&&!this.prev.b)this.back();
+   if(lb&&!this.prev.lb)this.rotate(-1);
+   if(rb&&!this.prev.rb)this.rotate(1);
+   if(start&&!this.prev.start)this.startAction();
+   if(uiMode==="game"&&!modal&&lt&&!this.prev.lt)zoomAt(.87,W/2,H/2);
+   if(uiMode==="game"&&!modal&&rt&&!this.prev.rt)zoomAt(1.15,W/2,H/2);
+  }
+  this.prev={a:a,b:b,lb:lb,rb:rb,start:start,lt:lt,rt:rt};
+ }
+};
+initThree();initInput();resize();goHome();Pad.init();requestRender();
 </script>
 </body>
 </html>
