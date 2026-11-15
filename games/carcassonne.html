@@ -13,6 +13,8 @@
 html,body{width:100%;height:100%;overflow:hidden;background:#0b1b13;user-select:none;-webkit-user-select:none;overscroll-behavior:none;touch-action:none;-webkit-text-size-adjust:100%;text-size-adjust:100%;font-family:"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif}
 #gl{display:block;position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;outline:none}
 #gl:active{cursor:grabbing}
+html:fullscreen,html:-webkit-full-screen,html:-moz-full-screen,html:-ms-fullscreen{background:#0b1b13}
+html:fullscreen body,html:-webkit-full-screen body,html:-moz-full-screen body,html:-ms-fullscreen body{width:100%;height:100%;background:#0b1b13}
 </style>
 </head>
 <body>
@@ -439,6 +441,37 @@ function saveUiScale(){try{localStorage.setItem(UI_ZOOM_KEY,String(uiScale));}ca
 function maxUiScaleValue(){return 2;}
 function clampUiScaleValue(v){return Math.max(.5,Math.min(2,Math.round(v*10)/10));}
 function effectiveHudScale(){return (uiMode==="home"&&!modal)?uiScale:Math.max(.8,Math.min(1.3,uiScale));}
+function isFullscreenActive(){return !!(document.fullscreenElement||document.webkitFullscreenElement||document.mozFullScreenElement||document.msFullscreenElement);}
+function isStandaloneDisplay(){
+ try{return !!(window.navigator.standalone||(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches));}catch(e){return false;}
+}
+function fullscreenButtonLabel(){return isFullscreenActive()?"退出":"全屏";}
+function fullscreenUnavailable(){
+ toast(isStandaloneDisplay()?"当前已全屏显示":"请将本页添加到主屏幕",3600);
+}
+function requestAppFullscreen(){
+ var el=document.documentElement,fn=el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen||el.msRequestFullscreen;
+ if(!fn){fullscreenUnavailable();return false;}
+ try{
+  var p=fn.call(el);
+  if(p&&typeof p.catch==="function")p.catch(fullscreenUnavailable);
+  return true;
+ }catch(e){fullscreenUnavailable();return false;}
+}
+function exitAppFullscreen(){
+ var fn=document.exitFullscreen||document.webkitExitFullscreen||document.mozCancelFullScreen||document.msExitFullscreen;
+ if(!fn)return false;
+ try{var p=fn.call(document);if(p&&typeof p.catch==="function")p.catch(function(){});return true;}catch(e){return false;}
+}
+function toggleAppFullscreen(){
+ if(isFullscreenActive()){exitAppFullscreen();return;}
+ if(isStandaloneDisplay()){fullscreenUnavailable();return;}
+ requestAppFullscreen();
+}
+function onFullscreenChanged(){
+ hudDirty=true;requestRender();
+ setTimeout(function(){resize();hudDirty=true;requestRender();},80);
+}
 function clearHudTextureCache(){
  Object.keys(hudTextureCache).forEach(function(k){try{hudTextureCache[k].dispose();}catch(e){}});
  hudTextureCache={};
@@ -449,7 +482,7 @@ function applyUiScale(next){
  uiScale=next;saveUiScale();clearHudTextureCache();hudDirty=true;requestRender();
 }
 
-function toast(msg){toastText=msg;hudDirty=true;clearTimeout(toastTimer);toastTimer=setTimeout(function(){toastText="";hudDirty=true;requestRender();},2200);requestRender();}
+function toast(msg,duration){toastText=msg;hudDirty=true;clearTimeout(toastTimer);toastTimer=setTimeout(function(){toastText="";hudDirty=true;requestRender();},duration||2200);requestRender();}
 function updateUI(){hudDirty=true;requestRender();}
 function openLog(){modal="log";hudDirty=true;requestRender();}
 function startGame(){
@@ -803,8 +836,9 @@ function buildHomeHud(){
   hudText("◆   席 位 与 对 手   ◆",W/2,ty,narrow?9:10.5,"#d8bd82","center",16);ty+=16+4;
   drawHomeSeats(ty,cardW,seatH,cols,seatGap,rowW,true);ty+=rows*seatH+(rows-1)*(mobile?5:6)+14;
   hudButton("home:start",(W-Math.min(320,W-64))/2,ty,Math.min(320,W-64),40,"开 始 筑 城",{primary:true,z:32,font:narrow?12:15});ty+=46;
-  var zB=narrow?22:28,zGap=narrow?4:6,zLabelW=narrow?54:78,zW=zB*2+zLabelW+zGap*2,zx=(W-zW)/2,hd=narrow?24:30,hx=Math.min(W-hd-(narrow?6:8),zx+zW+(narrow?6:10));
+  var zB=narrow?22:28,zGap=narrow?4:6,zLabelW=narrow?54:78,zW=zB*2+zLabelW+zGap*2,zx=(W-zW)/2,hd=narrow?24:30,hx=Math.min(W-hd-(narrow?6:8),zx+zW+(narrow?6:10)),fsX=Math.max(6,zx-hd-(narrow?6:10));
   homeZoomControl(zx,ty+(30-zB)/2,zB,zLabelW,narrow?8.5:10.5);
+  hudCircleButton("ui:fullscreen",fsX,ty+(30-hd)/2,hd,fullscreenButtonLabel(),{z:32,font:narrow?8.5:9.5});
   hudCircleButton("ui:help",hx,ty+(30-hd)/2,hd,"?",{z:32,font:narrow?14:16});ty+=40;
   if(!narrow)hudText("72 张经典板块 · 点击席位切换「玩家 / 人机」",W/2,ty,10,"rgba(186,201,181,.9)","center",16,W-40);
   return;
@@ -821,8 +855,9 @@ function buildHomeHud(){
  hudText("◆   席 位 与 对 手   ◆",W/2,cy,11.5,"#d8bd84","center",16);cy+=18+8;
  drawHomeSeats(cy,cardW,seatH,cols,seatGap,rowW,false);cy+=rows*seatH+(rows-1)*seatGap+26;
  hudButton("home:start",(W-Math.min(340,W-64))/2,cy,Math.min(340,W-64),52,"开 始 筑 城",{primary:true,z:32,font:16});cy+=62;
- var tiny=W<330,zB=tiny?26:34,zGap=tiny?5:7,zLabelW=tiny?62:88,zW=zB*2+zLabelW+zGap*2,zx=(W-zW)/2,hd=tiny?28:34,hx=Math.min(W-hd-10,zx+zW+(tiny?8:12));
+ var tiny=W<330,zB=tiny?26:34,zGap=tiny?5:7,zLabelW=tiny?62:88,zW=zB*2+zLabelW+zGap*2,zx=(W-zW)/2,hd=tiny?28:34,hx=Math.min(W-hd-10,zx+zW+(tiny?8:12)),fsX=Math.max(10,zx-hd-(tiny?8:12));
  homeZoomControl(zx,cy+(38-zB)/2,zB,zLabelW,tiny?10:12);
+ hudCircleButton("ui:fullscreen",fsX,cy+(38-hd)/2,hd,fullscreenButtonLabel(),{z:32,font:tiny?9.5:10.5});
  hudCircleButton("ui:help",hx,cy+(38-hd)/2,hd,"?",{z:32,font:tiny?15:17});cy+=54;
  hudText("72 张经典板块 · 点击席位切换「玩家 / 人机」",W/2,cy,10,"rgba(186,201,181,.9)","center",16,W-40);
 }
@@ -844,8 +879,9 @@ function drawUltraHome(){
  drawHomeSeats(ty,seatW,seatH,count,sGap,rowW,true);ty+=seatH+10;
  var startW=Math.min(roomy?340:300,W-48);
  hudButton("home:start",(W-startW)/2,ty,startW,startH,"开 始 筑 城",{primary:true,z:32,font:roomy?16:(tinyH?10.5:11.5)});ty+=startH+6;
- var zLabelW=roomy?78:54,zW=zB*2+zLabelW+8,zx=(W-zW)/2,hd=roomy?30:(tinyH?20:24),hx=Math.min(W-hd-6,zx+zW+6);
+ var zLabelW=roomy?78:54,zW=zB*2+zLabelW+8,zx=(W-zW)/2,hd=roomy?30:(tinyH?20:24),hx=Math.min(W-hd-6,zx+zW+6),fsX=Math.max(4,zx-hd-(roomy?8:4));
  homeZoomControl(zx,ty,zB,zLabelW,roomy?10.5:(tinyH?8:8.5));
+ hudCircleButton("ui:fullscreen",fsX,ty+(zB-hd)/2,hd,fullscreenButtonLabel(),{z:32,font:roomy?10:(tinyH?7.5:8.5)});
  hudCircleButton("ui:help",hx,ty+(zB-hd)/2,hd,"?",{z:32,font:roomy?16:(tinyH?12:14)});
 }
 function homeZoomControl(x,y,b,labelW,font){
@@ -1009,6 +1045,7 @@ function doAction(id){
  if(parts[0]==="feature"&&parts[1]==="zone"){setPendingZone(parts.slice(2).join(":"));return;}
  if(id==="feature:skip"){setPendingZone("__skip__");return;}
  if(id==="feature:confirm"){confirmMeepleSelection();return;}
+ if(id==="ui:fullscreen"){toggleAppFullscreen();return;}
  if(id==="ui:help"){modal="help";helpPage=0;hudDirty=true;requestRender();return;}
  if(id==="help:tab:0"||id==="help:tab:1"){helpPage=id.slice(-1)==="1"?1:0;hudDirty=true;requestRender();return;}
  if(id==="ui:log"){openLog();return;}
@@ -1080,6 +1117,8 @@ function initInput(){
  document.addEventListener("gesturechange",function(e){e.preventDefault();},{passive:false});
  document.addEventListener("dblclick",function(e){e.preventDefault();},{passive:false});
  document.addEventListener("touchmove",function(e){if(e.touches.length>1)e.preventDefault();},{passive:false});
+ ["fullscreenchange","webkitfullscreenchange","mozfullscreenchange","MSFullscreenChange"].forEach(function(name){document.addEventListener(name,onFullscreenChanged,false);});
+ ["fullscreenerror","webkitfullscreenerror"].forEach(function(name){document.addEventListener(name,fullscreenUnavailable,false);});
  glCanvas.addEventListener("wheel",function(e){e.preventDefault();zoomAt(e.deltaY<0?1.12:.89,e.clientX,e.clientY);},{passive:false});
  window.addEventListener("resize",resize);
  window.addEventListener("keydown",function(e){
