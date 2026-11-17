@@ -16,6 +16,26 @@
     touch-action: none; overscroll-behavior: none;
   }
   canvas { display: block; touch-action: none; }
+  /* ===== 全屏：进入全屏后保持深色底并铺满视口，避免露出白边/黑边 ===== */
+  html:fullscreen, html:-webkit-full-screen, html:-moz-full-screen, html:-ms-fullscreen {
+    width: 100%; height: 100%; background: #141a28;
+  }
+  html:fullscreen body, html:-webkit-full-screen body,
+  html:-moz-full-screen body, html:-ms-fullscreen body {
+    width: 100%; height: 100%; background: #141a28;
+  }
+  /* ===== 轻提示条（全屏不可用等）：DOM 浮层，不依赖 3D 场景，模态打开时同样可见 ===== */
+  #fs-toast {
+    position: fixed; left: 50%; bottom: calc(12% + env(safe-area-inset-bottom, 0px));
+    transform: translate(-50%, 10px); z-index: 10000;
+    max-width: 82vw; padding: 10px 18px; border-radius: 20px;
+    background: rgba(20, 26, 40, 0.94); border: 1px solid rgba(245, 215, 110, 0.45);
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5);
+    color: #f2e6c4; font-size: 13px; line-height: 1.55; letter-spacing: .5px; text-align: center;
+    opacity: 0; pointer-events: none;
+    transition: opacity .25s ease, transform .25s ease;
+  }
+  #fs-toast.show { opacity: 1; transform: translate(-50%, 0); }
   /* ===== 加载页（深蓝金奢华氛围 + 优雅淡出） ===== */
   #loading {
     position: fixed; inset: 0; z-index: 999;
@@ -3204,26 +3224,25 @@ var Home = {
     mkMesh(luxeBtnTex('+', zbb, zbb, { c1: '#414f6d', c2: '#2b3750', fg: '#dbe4f5', border: 'rgba(0,0,0,0.4)', key: 'zi' }), zbb, zbb, zxR, zy, 2);
     addClickable('home:zoomIn', zxR, zy, zbb, zbb, 2);
 
-    // 底部规则文本：左侧加圆形感叹号「玩法说明」按钮，文本+按钮整体居中；
-    // 有历史记录时，「记录」按钮出现在文本右侧，与玩法说明按钮关于中轴对称；无记录则只显示玩法说明
+    // 底部规则文本：左侧加圆形感叹号「玩法说明」按钮；有历史记录时「记录」按钮位于文本右侧；
+    // 「全屏」按钮常驻在最右侧——整组（按钮 + 文本）统一关于中轴对称排布
     var rulesStr = '规则：轮流行动 · 拿宝石 / 买牌 / 保留 · 先达 15 分并完成本轮者胜';
     var rlen = rulesStr.length;
     var hasRec = hasRecords();              // 有历史记录才显示「记录」按钮
     var rfs = Math.min(13, W * 0.032);
-    var hd = Math.min(30, W * 0.08);        // 圆形按钮直径（玩法说明 / 记录）
+    var hd = Math.min(30, W * 0.08);        // 圆形按钮直径（玩法说明 / 记录 / 全屏）
     var hgap = 5;                           // 按钮与文本间距
-    var rAvail = W - 2 * 8 - (hasRec ? 2 : 1) * (hd + hgap);   // 文本可用宽度（两侧各留 8px 安全边距 + 按钮空间）
+    var btnN = hasRec ? 3 : 2;              // 圆形按钮总数：玩法说明 +（记录）+ 全屏
+    var rAvail = W - 2 * 8 - btnN * (hd + hgap);   // 文本可用宽度（两侧各留 8px 安全边距 + 按钮空间）
     rfs = Math.min(rfs, rAvail / ((rlen + 1) * 1.1));
     var rtw = (rlen * rfs + rfs) * 1.1;     // 文本宽（与 mkTextMesh 尺寸公式一致）
-    var rx, hx, recX = 0;
-    if (hasRec) {
-      rx = 0;                               // 文本居中
-      hx = -(rtw / 2 + hgap + hd / 2);      // 玩法说明按钮（左）
-      recX = rtw / 2 + hgap + hd / 2;       // 记录按钮（右），关于中轴对称
-    } else {
-      rx = (hd + hgap) / 2;                 // 组合体居中：文本右移
-      hx = -(rtw + hgap) / 2;               // 按钮左移
-    }
+    // 整组从左到右依次排布：玩法说明 | 文本 | (记录) | 全屏，整体居中
+    var groupW = hd + hgap + rtw + (btnN - 1) * (hgap + hd);
+    var gLeft = -groupW / 2;
+    var hx = gLeft + hd / 2;                               // 玩法说明（最左）
+    var rx = gLeft + hd + hgap + rtw / 2;                  // 规则文本
+    var recX = gLeft + hd + hgap + rtw + hgap + hd / 2;    // 记录（有记录时）
+    var fsX = hasRec ? recX + hd + hgap : gLeft + hd + hgap + rtw + hgap + hd / 2;   // 全屏（最右）
     var rulesY = hasS ? H / 2 - H * 0.93 : H / 2 - H * 0.85;
     mkTextMesh(rulesStr, rx, rulesY, rfs, 'rgba(230,238,252,0.68)', { key: 'rules', bold: false });
     mkMesh(helpBtnTex(hd), hd, hd, hx, rulesY, 2);
@@ -3232,6 +3251,9 @@ var Home = {
       mkMesh(recBtnTex(hd), hd, hd, recX, rulesY, 2);
       addClickable('home:records', recX, rulesY, hd, hd, 2);
     }
+    // 全屏按钮：图标随当前全屏状态切换（进入 / 退出），移动端可借此隐藏地址栏
+    mkMesh(fsBtnTex(hd, isFullscreenActive()), hd, hd, fsX, rulesY, 2);
+    addClickable('ui:fullscreen', fsX, rulesY, hd, hd, 2);
     this.refresh();
   },
   refresh: function () {
@@ -3389,6 +3411,46 @@ function recBtnTex(d) {
     ctx.moveTo(cx, cy);
     ctx.lineTo(cx + r * 0.42, cy);
     ctx.stroke();
+  });
+}
+
+// 「全屏」按钮纹理（与玩法说明 / 记录按钮同款圆形底，金色图标：四角框线）
+// active=true 时绘制「退出全屏」图标（四角向内收拢），否则绘制「进入全屏」图标（四角向外扩展）
+function fsBtnTex(d, active) {
+  return makeTex('fsbtn' + (active ? 'x' : 'n'), d, d, function (ctx, w, h) {
+    // 外圈金色微光（与 helpBtnTex / recBtnTex 一致）
+    ctx.save();
+    ctx.shadowColor = 'rgba(240,201,60,0.55)';
+    ctx.shadowBlur = 10;
+    var g = ctx.createRadialGradient(w * 0.35, h * 0.32, w * 0.08, w / 2, h / 2, w / 2);
+    g.addColorStop(0, '#5a76a8');
+    g.addColorStop(1, '#2c3a56');
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 1, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(240,201,60,0.7)';
+    ctx.beginPath();
+    ctx.arc(w / 2, h / 2, w / 2 - 1, 0, Math.PI * 2);
+    ctx.stroke();
+    // 四角框线：角点距离 cp，臂端点距离 av（进入=向外扩、退出=向内收）
+    var cx = w / 2, cy = h / 2;
+    var cp = active ? w * 0.11 : w * 0.29;
+    var av = active ? cp + w * 0.15 : cp - w * 0.15;
+    ctx.strokeStyle = '#f5d76e';
+    ctx.lineWidth = Math.max(1.6, w * 0.08);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (s) {
+      var vx = cx + s[0] * cp, vy = cy + s[1] * cp;      // 角点
+      ctx.beginPath();
+      ctx.moveTo(cx + s[0] * av, vy);                    // 横臂
+      ctx.lineTo(vx, vy);
+      ctx.lineTo(vx, cy + s[1] * av);                    // 竖臂
+      ctx.stroke();
+    });
   });
 }
 
@@ -6825,6 +6887,7 @@ function initApp() {
   el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
   initAudioUnlock();     // 注册首次交互解锁（canvas 与 DOM 模态的首次点击均覆盖）
+  initFullscreenEvents(); // 监听全屏状态变化（含各厂商前缀事件），同步适配布局与按钮文案
   R.zoom = loadZoom();   // 读取持久化缩放值（无缓存则默认 100%）
   resize();
   showScreen('home');                       // 先构建首页，再让加载页优雅淡出（露出已就绪的场景）
@@ -6893,6 +6956,95 @@ function rebuildScreen() {
   }
 }
 
+// ============================================================
+// 全屏（桌面 + 移动端浏览器，全前缀兼容）
+// 说明：仅首页底部提供入口（对局页 / 结算页不设全屏按钮）。
+//       Android / Chromium 系（含多数国产浏览器）支持 Element 全屏；
+//       iOS Safari 与部分 App 内置 WebView 不提供该 API，此时给出「添加到主屏幕」引导。
+// ============================================================
+// 当前是否处于浏览器全屏（兼容各厂商前缀；不支持时恒为 false）
+function isFullscreenActive() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement ||
+            document.mozFullScreenElement || document.msFullscreenElement);
+}
+// 是否已作为独立应用打开（添加到主屏幕 / PWA standalone）：此时本就没有地址栏，无需再请求全屏
+function isStandaloneDisplay() {
+  try {
+    return !!(window.navigator.standalone ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+  } catch (e) { return false; }
+}
+// 轻量提示条（DOM 浮层，不依赖 3D 场景；连点自动续时，不叠加多条）
+function showToast(msg, ms) {
+  var el = document.getElementById('fs-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'fs-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  if (showToast._t) clearTimeout(showToast._t);
+  showToast._t = setTimeout(function () { el.classList.remove('show'); }, ms || 2800);
+}
+
+// 全屏不可用时的提示（区分 iOS 与其他环境的可行做法）
+function fullscreenUnavailable() {
+  if (isStandaloneDisplay()) { showToast('当前已是全屏显示'); return; }
+  var ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    showToast('iOS 浏览器不支持网页全屏 · 点击「分享 → 添加到主屏幕」后打开即可全屏', 4600);
+  } else if (/MicroMessenger|QQ\//i.test(ua)) {
+    showToast('当前浏览器限制了网页全屏 · 可点右上角「···」选择在浏览器中打开', 4000);
+  } else {
+    showToast('当前浏览器不支持网页全屏 · 可尝试添加到主屏幕后打开', 3600);
+  }
+}
+
+// 请求进入全屏（必须在用户手势内调用：本方法由 pointerup → dispatchTap 同步触发）
+function requestAppFullscreen() {
+  var el = document.documentElement;
+  var fn = el.requestFullscreen || el.webkitRequestFullscreen ||
+           el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (!fn) { fullscreenUnavailable(); return false; }
+  try {
+    var p = fn.call(el);
+    if (p && typeof p.catch === 'function') p.catch(function () { fullscreenUnavailable(); });
+    return true;
+  } catch (e) { fullscreenUnavailable(); return false; }
+}
+// 退出全屏
+function exitAppFullscreen() {
+  var fn = document.exitFullscreen || document.webkitExitFullscreen ||
+           document.mozCancelFullScreen || document.msExitFullscreen;
+  if (!fn) return false;
+  try {
+    var p = fn.call(document);
+    if (p && typeof p.catch === 'function') p.catch(function () {});
+    return true;
+  } catch (e) { return false; }
+}
+// 切换全屏状态（进入 / 退出）
+function toggleAppFullscreen() {
+  if (isFullscreenActive()) { exitAppFullscreen(); return; }
+  if (isStandaloneDisplay()) { showToast('当前已是全屏显示'); return; }
+  requestAppFullscreen();
+}
+// 全屏状态变化（进入 / 退出、Esc 退出、系统手势退出均会触发）：
+// 视口尺寸会随之改变（地址栏收起/展开），先立即适配渲染尺寸，再经 resize 防抖重建当前屏，
+// 使首页全屏图标的「进入 / 退出」状态与布局同步更新
+function onFullscreenChanged() {
+  if (resizeTimer) { clearTimeout(resizeTimer); resizeTimer = null; }
+  resize();
+}
+// 注册全屏相关事件（标准事件 + 各厂商前缀事件）
+function initFullscreenEvents() {
+  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange']
+    .forEach(function (n) { document.addEventListener(n, onFullscreenChanged, false); });
+  ['fullscreenerror', 'webkitfullscreenerror']
+    .forEach(function (n) { document.addEventListener(n, function () { fullscreenUnavailable(); }, false); });
+}
+
 function dispatchTap(wx, wy) {
   if (FLY.busy) return;   // 飞行动画播放中：屏蔽输入
   if (PauseModal.visible) {
@@ -6902,6 +7054,8 @@ function dispatchTap(wx, wy) {
   }
   var key = hitTest(wx, wy);
   if (!key) return;
+  // 全屏按钮：仅首页入口（对局 / 结算页不设按钮）
+  if (key === 'ui:fullscreen') { playSfx('tap'); toggleAppFullscreen(); return; }
   if (Screen.current === 'home') Home.onTap(key);
   else if (Screen.current === 'game') GameScreen.onTap(key);
   else if (Screen.current === 'end') EndScreen.onTap(key);

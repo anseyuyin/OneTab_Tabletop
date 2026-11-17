@@ -27,3 +27,4 @@
 - 玩家主题色只通过 `p.theme`（`PLAYER_THEMES[POS_THEME[panelForPlayer(...)]]`）读取，勿按玩家编号直接取色
 
 ## Notes
+- 全屏：实现集中在 `dispatchTap` 之前的「全屏」小节（`isFullscreenActive` / `requestAppFullscreen` / `toggleAppFullscreen` / `onFullscreenChanged`）。**仅首页底部有入口**（点击键 `ui:fullscreen`，圆形图标由 `fsBtnTex(d, active)` 按全屏状态画「进入 / 退出」两种图标）；对局页与结算页刻意不设全屏按钮。状态变化经 `onFullscreenChanged → resize()` 防抖重建当前屏以刷新图标。iOS Safari 无元素全屏 API，降级为 `showToast` 引导「添加到主屏幕」。
